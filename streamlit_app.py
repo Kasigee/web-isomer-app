@@ -83,7 +83,7 @@ def find_database_energy(mol, csv_file="COMPAS_XTB_MS_WEBAPP_DATA.csv"):
 def model_dhr(sum_dev, homa, rmsd):
     A_d,A_h,A_r,C=0.02082790,-340.97268109,16.64640654,236.14120030
     return A_d*sum_dev + A_h*homa + A_r*rmsd + C, None, None,
-           "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
+    "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
 # (Define other models similarly...)
 
 # ---------- Streamlit App ----------

@@ -30,14 +30,16 @@ def load_molecule_from_xyz(xyz_text):
 
 def calculate_bond_angle(p1, p2, p3):
     v1, v2 = p1 - p2, p3 - p2
-    v1 /= np.linalg.norm(v1); v2 /= np.linalg.norm(v2)
+    v1 /= np.linalg.norm(v1);
+    v2 /= np.linalg.norm(v2)
     return np.degrees(np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0)))
 
 
 def calculate_dihedral(p1, p2, p3, p4):
     b1, b2, b3 = p2 - p1, p3 - p2, p4 - p3
     n1, n2 = np.cross(b1, b2), np.cross(b2, b3)
-    n1 /= np.linalg.norm(n1); n2 /= np.linalg.norm(n2)
+    n1 /= np.linalg.norm(n1);
+    n2 /= np.linalg.norm(n2)
     return np.degrees(np.arccos(np.clip(np.dot(n1, n2), -1.0, 1.0)))
 
 
@@ -51,21 +53,49 @@ def find_bonded_carbons(mol):
 
 
 def analyze_geometry(mol):
-    conf = mol.GetConformer()
+    """
+    Compute ΣΔφ (sum of dihedral deviations) and RMSD of bond angles.
+    """
+    from collections import defaultdict
     bonded = find_bonded_carbons(mol)
-    neighbors = {idx: [nbr.GetIdx() for nbr in mol.GetAtomWithIdx(idx).GetNeighbors()]
-                 for atom in mol.GetAtoms() if atom.GetAtomicNum() == 6
-                 for idx in [atom.GetIdx()]}
-    angles = []
-    for a1, a2 in bonded:
-        for a3 in neighbors.get(a2, []):
-            if a3 == a1: continue
-            p1 = np.array(conf.GetAtomPosition(a1))
-            p2 = np.array(conf.GetAtomPosition(a2))
-            p3 = np.array(conf.GetAtomPosition(a3))
-            angles.append(calculate_bond_angle(p1, p2, p3))
-    sum_dev = sum(abs(120 - a) for a in angles)
-    rmsd = np.sqrt(np.mean([(120 - a)**2 for a in angles])) if angles else 0.0
+    neighbors = defaultdict(list)
+    for a, b in bonded:
+        neighbors[a].append(b)
+        neighbors[b].append(a)
+    conf = mol.GetConformer()
+    sum_less_90 = 0.0
+    sum_greater_90 = 0.0
+    sum_sq_dev = 0.0
+    count_angles = 0
+    unique_dihedrals = set()
+    for a1 in neighbors:
+        for a2 in neighbors[a1]:
+            for a3 in neighbors[a2]:
+                if a3 == a1:
+                    continue
+                # Bond angle
+                p1 = np.array(conf.GetAtomPosition(a1))
+                p2 = np.array(conf.GetAtomPosition(a2))
+                p3 = np.array(conf.GetAtomPosition(a3))
+                angle = calculate_bond_angle(p1, p2, p3)
+                sum_sq_dev += (120 - angle) ** 2
+                count_angles += 1
+                # Dihedral deviations
+                for a4 in neighbors[a3]:
+                    if a4 in (a2, a1):
+                        continue
+                    key = tuple(sorted((a1, a2, a3, a4)))
+                    if key in unique_dihedrals:
+                        continue
+                    unique_dihedrals.add(key)
+                    p4 = np.array(conf.GetAtomPosition(a4))
+                    dih = calculate_dihedral(p1, p2, p3, p4)
+                    if dih < 90:
+                        sum_less_90 += dih
+                    else:
+                        sum_greater_90 += (180 - dih)
+    sum_dev = sum_less_90 + sum_greater_90
+    rmsd = np.sqrt(sum_sq_dev / count_angles) if count_angles > 0 else 0.0
     return sum_dev, rmsd
 
 
@@ -75,14 +105,12 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
     homas = []
     for ring in rings:
         if all(mol.GetAtomWithIdx(i).GetAtomicNum() == 6 and mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
-            lengths = [
-                np.linalg.norm(np.array(conf.GetAtomPosition(ring[i])) -
-                               np.array(conf.GetAtomPosition(ring[(i+1) % len(ring)])))
-                for i in range(len(ring))
-            ]
+            lengths = [np.linalg.norm(np.array(conf.GetAtomPosition(ring[i])) -
+                                      np.array(conf.GetAtomPosition(ring[(i+1) % len(ring)])))
+                       for i in range(len(ring))]
             n = len(lengths)
-            sum_sq = sum((L - R_opt)**2 for L in lengths)
-            homas.append(1 - (alpha/n)*sum_sq)
+            sum_sq = sum((L - R_opt) ** 2 for L in lengths)
+            homas.append(1 - (alpha / n) * sum_sq)
     return (np.nan, []) if not homas else (float(np.mean(homas)), homas)
 
 # ---------- Database Lookup ----------
@@ -129,7 +157,6 @@ def model_dh_only(sum_dev, homa):
 # ---------- Streamlit App ----------
 def main():
     st.title("Isomerization Energy Predictor")
-    # Upload handling
     if 'xyz_text' not in st.session_state:
         st.session_state.xyz_text = None
         st.session_state.prev_text = None
@@ -139,7 +166,6 @@ def main():
         if txt != st.session_state.prev_text:
             st.session_state.xyz_text = txt
             st.session_state.prev_text = txt
-    # Model selector
     models = [
         "Dihedral + HOMA + θRMSD",
         "Dihedral-only",
@@ -147,7 +173,6 @@ def main():
         "Dihedral + HOMA"
     ]
     choice = st.sidebar.selectbox("Prediction model:", models, index=0)
-    # Trigger calc
     trigger = (st.session_state.xyz_text and
                st.session_state.xyz_text != st.session_state.get('computed_for'))
     if st.sidebar.button("Calculate"): trigger = True
@@ -155,14 +180,11 @@ def main():
         st.session_state.computed_for = st.session_state.xyz_text
         mol = load_molecule_from_xyz(st.session_state.xyz_text)
         if not mol: return
-        # SMILES report
         smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
         st.markdown(f"**SMILES:** {smi}")
-        # Compute geometry
         sum_dev, rmsd = analyze_geometry(mol)
         homa_avg, _ = homa_aromatic_rings(mol)
         homa_avg = 0.0 if np.isnan(homa_avg) else homa_avg
-        # Prediction
         if choice == "Dihedral + HOMA + θRMSD":
             E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
         elif choice == "Dihedral-only":
@@ -171,13 +193,11 @@ def main():
             E, low, high, eq = model_homa_only(homa_avg)
         elif choice == "Dihedral + HOMA":
             E, low, high, eq = model_dh_only(sum_dev, homa_avg)
-        # Display results
         st.markdown(f"**Equation:** `{eq}`")
         st.markdown(f"**ΣDihedral:** {sum_dev:.3f}   **HOMA:** {homa_avg:.3f}   **θRMSD:** {rmsd:.3f}")
         st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
         if low is not None and high is not None:
             st.markdown(f"_Range: {low:.3f} – {high:.3f} kJ/mol_")
-        # Database lookup
         db_energy, db_avail, db_source = find_database_energy(mol)
         if not db_avail:
             st.warning("No database files found. Add CSVs to enable lookup.")
@@ -187,18 +207,7 @@ def main():
             st.markdown(f"**Database ΔE: {db_energy:.3f} kJ/mol ({db_source})**")
         # 3Dmol.js viewer at bottom
         if st.session_state.xyz_text:
-            html = f'''
-            <div id="viewer" style="width:400px; height:300px;"></div>
-            <script src="https://3Dmol.org/build/3Dmol.js"></script>
-            <script>
-            let v = $3Dmol.createViewer("viewer", {{backgroundColor: '0xeeeeee'}});
-            v.addModel(`{st.session_state.xyz_text}`, "xyz");
-            v.setStyle({{stick: {{}}}});
-            v.rotate(1, 90);
-            v.zoomTo();
-            v.render();
-            </script>
-            '''
+            html = f'''<div id="viewer" style="width:400px; height:300px;"></div><script src="https://3Dmol.org/build/3Dmol.js"></script><script>let v = $3Dmol.createViewer("viewer", {{backgroundColor: '0xeeeeee'}});v.addModel(`{st.session_state.xyz_text}`, "xyz");v.setStyle({{stick: {{}}}});v.rotate(1, 90);v.zoomTo();v.render();</script>'''
             components.html(html, height=320)
 
 if __name__ == '__main__':

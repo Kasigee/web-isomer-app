@@ -6,13 +6,6 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
 
-# Try to import py3Dmol for 3D viewer
-try:
-    import py3Dmol
-    HAVE_VIEWER = True
-except ImportError:
-    HAVE_VIEWER = False
-
 # ---------- Page Configuration ----------
 st.set_page_config(page_title="Isomerization Energy", layout="centered")
 
@@ -97,23 +90,19 @@ def find_database_energy(mol):
     primary = "COMPAS_XTB_MS_WEBAPP_DATA.csv"
     secondary = "compas-3D.csv"
     smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
-    # Primary
     if os.path.exists(primary):
         df = pd.read_csv(primary)
         m = df.loc[df.smiles == smi]
         if not m.empty:
             return float(m.D4_rel_energy.iloc[0]), True, "PBE0-D4/6-31G(2df,p)"
-    # Secondary
     if os.path.exists(secondary):
         df2 = pd.read_csv(secondary)
         m2 = df2.loc[df2.smiles == smi]
         if not m2.empty and "Erel_eV" in df2.columns:
             e_ev = float(m2.Erel_eV.iloc[0])
             return e_ev * 96.485, True, "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP"
-    # File exists but no match
     if os.path.exists(primary) or os.path.exists(secondary):
         return None, True, None
-    # No files
     return None, False, None
 
 # ---------- Prediction Models ----------
@@ -196,17 +185,21 @@ def main():
             st.info("No database match found for this isomer.")
         else:
             st.markdown(f"**Database ΔE: {db_energy:.3f} kJ/mol ({db_source})**")
-        # 3D viewer at bottom
-        if HAVE_VIEWER:
-            view = py3Dmol.view(width=400, height=300)
-            view.addModel(st.session_state.xyz_text, 'xyz')
-            view.setStyle({'stick':{}})
-            view.setBackgroundColor('0xeeeeee')
-            view.rotate({'x':90, 'y':0, 'z':0})
-            view.zoomTo()
-            components.html(view._make_html(), height=300, width=400)
-        else:
-            st.info("Install 'py3Dmol' in requirements.txt to enable 3D viewer.")
+        # 3Dmol.js viewer at bottom
+        if st.session_state.xyz_text:
+            html = f'''
+            <div id="viewer" style="width:400px; height:300px;"></div>
+            <script src="https://3Dmol.org/build/3Dmol.js"></script>
+            <script>
+            let v = $3Dmol.createViewer("viewer", {{backgroundColor: '0xeeeeee'}});
+            v.addModel(`{st.session_state.xyz_text}`, "xyz");
+            v.setStyle({{stick: {{}}}});
+            v.rotate(1, 90);
+            v.zoomTo();
+            v.render();
+            </script>
+            '''
+            components.html(html, height=320)
 
 if __name__ == '__main__':
     main()

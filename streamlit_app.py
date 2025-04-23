@@ -5,7 +5,13 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
-import py3Dmol
+
+# Try to import py3Dmol for 3D viewer
+try:
+    import py3Dmol
+    HAVE_VIEWER = True
+except ImportError:
+    HAVE_VIEWER = False
 
 # ---------- Page Configuration ----------
 st.set_page_config(page_title="Isomerization Energy", layout="centered")
@@ -91,13 +97,11 @@ def find_database_energy(mol):
     primary = "COMPAS_XTB_MS_WEBAPP_DATA.csv"
     secondary = "compas-3D.csv"
     smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
-    # Primary
     if os.path.exists(primary):
         df = pd.read_csv(primary)
         m = df.loc[df.smiles == smi]
         if not m.empty:
             return float(m.D4_rel_energy.iloc[0]), True, "PBE0-D4/6-31G(2df,p)", smi
-    # Secondary
     if os.path.exists(secondary):
         df2 = pd.read_csv(secondary)
         m2 = df2.loc[df2.smiles == smi]
@@ -105,10 +109,8 @@ def find_database_energy(mol):
             e_ev = float(m2.Erel_eV.iloc[0])
             return e_ev * 96.485, True, \
                    "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP", smi
-    # No match but files exist
     if os.path.exists(primary) or os.path.exists(secondary):
         return None, True, None, smi
-    # No files
     return None, False, None, smi
 
 # ---------- Prediction Models ----------
@@ -135,7 +137,6 @@ def model_dh_only(sum_dev, homa):
 # ---------- Streamlit App ----------
 def main():
     st.title("Isomerization Energy Predictor")
-    # Persist upload
     if 'xyz_text' not in st.session_state:
         st.session_state.xyz_text = None
         st.session_state.prev_text = None
@@ -145,7 +146,6 @@ def main():
         if txt != st.session_state.prev_text:
             st.session_state.xyz_text = txt
             st.session_state.prev_text = txt
-    # Sidebar selector
     models = [
         "Dihedral + HOMA + θRMSD",
         "Dihedral-only",
@@ -153,7 +153,6 @@ def main():
         "Dihedral + HOMA"
     ]
     choice = st.sidebar.selectbox("Prediction model:", models, index=0)
-    # Trigger
     trigger = (st.session_state.xyz_text and
                st.session_state.xyz_text != st.session_state.get('computed_for'))
     if st.sidebar.button("Calculate"): trigger = True
@@ -161,23 +160,22 @@ def main():
         st.session_state.computed_for = st.session_state.xyz_text
         mol = load_molecule_from_xyz(st.session_state.xyz_text)
         if not mol: return
-        # SMILES
         smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
         st.markdown(f"**SMILES:** {smi}")
-        # 3D viewer (top-down)
-        view = py3Dmol.view(width=400, height=300)
-        view.addModel(st.session_state.xyz_text, 'xyz')
-        view.setStyle({'stick':{}})
-        view.setBackgroundColor('0xeeeeee')
-        view.rotate({'x':90, 'y':0, 'z':0})
-        view.zoomTo()
-        html = view._make_html()
-        components.html(html, height=300, width=400)
-        # Geometry
+        # 3D viewer if available
+        if HAVE_VIEWER:
+            view = py3Dmol.view(width=400, height=300)
+            view.addModel(st.session_state.xyz_text, 'xyz')
+            view.setStyle({'stick':{}})
+            view.setBackgroundColor('0xeeeeee')
+            view.rotate({'x':90, 'y':0, 'z':0})
+            view.zoomTo()
+            components.html(view._make_html(), height=300, width=400)
+        else:
+            st.info("Install 'py3Dmol' in requirements.txt to enable 3D viewer.")
         sum_dev, rmsd = analyze_geometry(mol)
         homa_avg, _ = homa_aromatic_rings(mol)
         homa_avg = 0.0 if np.isnan(homa_avg) else homa_avg
-        # Predict
         if choice == "Dihedral + HOMA + θRMSD":
             E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
         elif choice == "Dihedral-only":
@@ -186,9 +184,7 @@ def main():
             E, low, high, eq = model_homa_only(homa_avg)
         elif choice == "Dihedral + HOMA":
             E, low, high, eq = model_dh_only(sum_dev, homa_avg)
-        # DB lookup
         db_energy, db_avail, db_source, smi_out = find_database_energy(mol)
-        # Output
         st.markdown(f"**Equation:** `{eq}`")
         st.markdown(f"**ΣDihedral:** {sum_dev:.3f}   **HOMA:** {homa_avg:.3f}   **θRMSD:** {rmsd:.3f}")
         st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")

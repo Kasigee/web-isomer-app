@@ -97,21 +97,24 @@ def find_database_energy(mol):
     primary = "COMPAS_XTB_MS_WEBAPP_DATA.csv"
     secondary = "compas-3D.csv"
     smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
+    # Primary
     if os.path.exists(primary):
         df = pd.read_csv(primary)
         m = df.loc[df.smiles == smi]
         if not m.empty:
-            return float(m.D4_rel_energy.iloc[0]), True, "PBE0-D4/6-31G(2df,p)", smi
+            return float(m.D4_rel_energy.iloc[0]), True, "PBE0-D4/6-31G(2df,p)"
+    # Secondary
     if os.path.exists(secondary):
         df2 = pd.read_csv(secondary)
         m2 = df2.loc[df2.smiles == smi]
         if not m2.empty and "Erel_eV" in df2.columns:
             e_ev = float(m2.Erel_eV.iloc[0])
-            return e_ev * 96.485, True, \
-                   "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP", smi
+            return e_ev * 96.485, True, "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP"
+    # File exists but no match
     if os.path.exists(primary) or os.path.exists(secondary):
-        return None, True, None, smi
-    return None, False, None, smi
+        return None, True, None
+    # No files
+    return None, False, None
 
 # ---------- Prediction Models ----------
 def model_dhr(sum_dev, homa, rmsd):
@@ -137,6 +140,7 @@ def model_dh_only(sum_dev, homa):
 # ---------- Streamlit App ----------
 def main():
     st.title("Isomerization Energy Predictor")
+    # Upload handling
     if 'xyz_text' not in st.session_state:
         st.session_state.xyz_text = None
         st.session_state.prev_text = None
@@ -146,6 +150,7 @@ def main():
         if txt != st.session_state.prev_text:
             st.session_state.xyz_text = txt
             st.session_state.prev_text = txt
+    # Model selector
     models = [
         "Dihedral + HOMA + θRMSD",
         "Dihedral-only",
@@ -153,6 +158,7 @@ def main():
         "Dihedral + HOMA"
     ]
     choice = st.sidebar.selectbox("Prediction model:", models, index=0)
+    # Trigger calc
     trigger = (st.session_state.xyz_text and
                st.session_state.xyz_text != st.session_state.get('computed_for'))
     if st.sidebar.button("Calculate"): trigger = True
@@ -160,9 +166,37 @@ def main():
         st.session_state.computed_for = st.session_state.xyz_text
         mol = load_molecule_from_xyz(st.session_state.xyz_text)
         if not mol: return
+        # SMILES report
         smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
         st.markdown(f"**SMILES:** {smi}")
-        # 3D viewer if available
+        # Compute geometry
+        sum_dev, rmsd = analyze_geometry(mol)
+        homa_avg, _ = homa_aromatic_rings(mol)
+        homa_avg = 0.0 if np.isnan(homa_avg) else homa_avg
+        # Prediction
+        if choice == "Dihedral + HOMA + θRMSD":
+            E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
+        elif choice == "Dihedral-only":
+            E, low, high, eq = model_dihedral_only(sum_dev)
+        elif choice == "HOMA-only":
+            E, low, high, eq = model_homa_only(homa_avg)
+        elif choice == "Dihedral + HOMA":
+            E, low, high, eq = model_dh_only(sum_dev, homa_avg)
+        # Display results
+        st.markdown(f"**Equation:** `{eq}`")
+        st.markdown(f"**ΣDihedral:** {sum_dev:.3f}   **HOMA:** {homa_avg:.3f}   **θRMSD:** {rmsd:.3f}")
+        st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
+        if low is not None and high is not None:
+            st.markdown(f"_Range: {low:.3f} – {high:.3f} kJ/mol_")
+        # Database lookup
+        db_energy, db_avail, db_source = find_database_energy(mol)
+        if not db_avail:
+            st.warning("No database files found. Add CSVs to enable lookup.")
+        elif db_energy is None:
+            st.info("No database match found for this isomer.")
+        else:
+            st.markdown(f"**Database ΔE: {db_energy:.3f} kJ/mol ({db_source})**")
+        # 3D viewer at bottom
         if HAVE_VIEWER:
             view = py3Dmol.view(width=400, height=300)
             view.addModel(st.session_state.xyz_text, 'xyz')
@@ -173,29 +207,6 @@ def main():
             components.html(view._make_html(), height=300, width=400)
         else:
             st.info("Install 'py3Dmol' in requirements.txt to enable 3D viewer.")
-        sum_dev, rmsd = analyze_geometry(mol)
-        homa_avg, _ = homa_aromatic_rings(mol)
-        homa_avg = 0.0 if np.isnan(homa_avg) else homa_avg
-        if choice == "Dihedral + HOMA + θRMSD":
-            E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
-        elif choice == "Dihedral-only":
-            E, low, high, eq = model_dihedral_only(sum_dev)
-        elif choice == "HOMA-only":
-            E, low, high, eq = model_homa_only(homa_avg)
-        elif choice == "Dihedral + HOMA":
-            E, low, high, eq = model_dh_only(sum_dev, homa_avg)
-        db_energy, db_avail, db_source, smi_out = find_database_energy(mol)
-        st.markdown(f"**Equation:** `{eq}`")
-        st.markdown(f"**ΣDihedral:** {sum_dev:.3f}   **HOMA:** {homa_avg:.3f}   **θRMSD:** {rmsd:.3f}")
-        st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
-        if low is not None and high is not None:
-            st.markdown(f"_Range: {low:.3f} – {high:.3f} kJ/mol_")
-        if not db_avail:
-            st.warning("No database files found. Add CSVs to enable lookup.")
-        elif db_energy is None:
-            st.info(f"SMILES: {smi_out} — no database match found.")
-        else:
-            st.success(f"SMILES: {smi_out} — Database ΔE: {db_energy:.3f} kJ/mol ({db_source})")
 
 if __name__ == '__main__':
     main()

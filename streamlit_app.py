@@ -1,9 +1,11 @@
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
+import py3Dmol
 
 # ---------- Page Configuration ----------
 st.set_page_config(page_title="Isomerization Energy", layout="centered")
@@ -162,6 +164,15 @@ def main():
         # SMILES
         smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
         st.markdown(f"**SMILES:** {smi}")
+        # 3D viewer (top-down)
+        view = py3Dmol.view(width=400, height=300)
+        view.addModel(st.session_state.xyz_text, 'xyz')
+        view.setStyle({'stick':{}})
+        view.setBackgroundColor('0xeeeeee')
+        view.rotate({'x':90, 'y':0, 'z':0})
+        view.zoomTo()
+        html = view._make_html()
+        components.html(html, height=300, width=400)
         # Geometry
         sum_dev, rmsd = analyze_geometry(mol)
         homa_avg, _ = homa_aromatic_rings(mol)

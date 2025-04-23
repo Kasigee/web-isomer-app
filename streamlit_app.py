@@ -5,6 +5,15 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
 
+UNE_GREEN = \"#00693e\"   # main brand green
+UNE_GOLD  = \"#ffd400\"   # highlight
+st.markdown(
+    f\"\"\"<style>
+    .stApp {{ background-color:{UNE_GREEN}10; }}
+    .css-1d391kg {{ color:{UNE_GREEN}; }}
+    .css-1v3fvcr {{ background:{UNE_GOLD}33; }}
+    </style>\"\"\", unsafe_allow_html=True)
+
 # ---------- Geometry & Analysis Helpers ----------
 
 def load_molecule_from_xyz(xyz_text):
@@ -50,7 +59,8 @@ def analyze_geometry(mol):
     angles = []
     for a1, a2 in bonded:
         for a3 in neighbors.get(a2, []):
-            if a3 == a1: continue
+            if a3 == a1:
+                continue
             p1 = np.array(conf.GetAtomPosition(a1))
             p2 = np.array(conf.GetAtomPosition(a2))
             p3 = np.array(conf.GetAtomPosition(a3))
@@ -76,37 +86,53 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
 
 
 def find_database_energy(mol):
-    # Primary lookup
     primary = "COMPAS_XTB_MS_WEBAPP_DATA.csv"
     secondary = "compas-3D.csv"
     smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
-    # Check primary file
+    # Primary lookup
     if os.path.exists(primary):
         df = pd.read_csv(primary)
         match = df.loc[df.smiles == smi]
         if not match.empty:
-            return float(match.D4_rel_energy.iloc[0]), True, "PBE0-D4/6-31G(2df,p)"
-    # Check secondary file
+            return float(match.D4_rel_energy.iloc[0]), True, "PBE0-D4/6-31G(2df,p)", smi
+    # Secondary lookup
     if os.path.exists(secondary):
         df2 = pd.read_csv(secondary)
         match2 = df2.loc[df2.smiles == smi]
         if not match2.empty and "Erel_eV" in df2.columns:
             e_ev = float(match2.Erel_eV.iloc[0])
-            e_kj = e_ev * 96.485  # convert eV to kJ/mol
-            return e_kj, True, "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP"
-    # If at least one file exists
+            e_kj = e_ev * 96.485  # eV → kJ/mol
+            return e_kj, True, "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP", smi
+    # Files exist but no match
     if os.path.exists(primary) or os.path.exists(secondary):
-        return None, True, None
-    # No database at all
-    return None, False, None
+        return None, True, None, smi
+    # No database
+    return None, False, None, smi
 
 # ---------- Prediction Models ----------
 
 def model_dhr(sum_dev, homa, rmsd):
-    A_d, A_h, A_r, C = (0.02082790, -340.97268109, 16.64640654, 236.14120030)
+    A_d, A_h, A_r, C = 0.02082790, -340.97268109, 16.64640654, 236.14120030
     eq = "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
     return (A_d*sum_dev + A_h*homa + A_r*rmsd + C), None, None, eq
-# ... other models
+
+
+def model_dihedral_only(sum_dev):
+    A, B = 0.01506654, 5.26542057
+    eq = "E = 0.01506654·ΣDihedral + 5.26542057"
+    return (A*sum_dev + B), None, None, eq
+
+
+def model_homa_only(homa):
+    A, B = -83.95374901, 81.47198711
+    eq = "E = -83.9537·HOMA + 81.4720"
+    return (A*homa + B), None, None, eq
+
+
+def model_dh_only(sum_dev, homa):
+    A_d, A_h, B = 0.02230771, -361.11764751, 275.86109778
+    eq = "E = 0.02230771·ΣDihedral - 361.1176·HOMA + 275.8611"
+    return (A_d*sum_dev + A_h*homa + B), None, None, eq
 
 # ---------- Streamlit App ----------
 
@@ -124,34 +150,47 @@ def main():
         if txt != st.session_state.prev_text:
             st.session_state.xyz_text = txt
             st.session_state.prev_text = txt
-    
-    # Sidebar model selector
-    models = ["Dihedral + HOMA + θRMSD", "Dihedral-only", "HOMA-only", "Dihedral + HOMA", "HOMA + XTB", "XTB-only"]
-    choice = st.sidebar.selectbox("Prediction model:", models, index=0)
-    xtb_val = None
-    if "XTB" in choice:
-        xtb_val = st.sidebar.number_input("XTB energy:", value=0.0)
 
-    # Auto-calc when file changes or manual trigger
+    # Sidebar model selector
+    models = [
+        "Dihedral + HOMA + θRMSD",
+        "Dihedral-only",
+        "HOMA-only",
+        "Dihedral + HOMA"
+    ]
+    choice = st.sidebar.selectbox("Prediction model:", models, index=0)
+
+    # Auto-calc or manual
     trigger = (st.session_state.xyz_text and
                st.session_state.xyz_text != st.session_state.get('computed_for'))
-    if st.sidebar.button("Calculate"): trigger = True
+    if st.sidebar.button("Calculate"):
+        trigger = True
 
     if trigger:
         st.session_state.computed_for = st.session_state.xyz_text
         mol = load_molecule_from_xyz(st.session_state.xyz_text)
-        if not mol: return
+        if not mol:
+            return
+        # SMILES display
+        smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
+        st.markdown(f"**SMILES:** {smi}")
+
         sum_dev, rmsd = analyze_geometry(mol)
         homa_avg, _ = homa_aromatic_rings(mol)
         homa_avg = 0.0 if np.isnan(homa_avg) else homa_avg
 
-        # Predicted energy
+        # Predict
         if choice == "Dihedral + HOMA + θRMSD":
             E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
-        # ... handle other models similarly
+        elif choice == "Dihedral-only":
+            E, low, high, eq = model_dihedral_only(sum_dev)
+        elif choice == "HOMA-only":
+            E, low, high, eq = model_homa_only(homa_avg)
+        elif choice == "Dihedral + HOMA":
+            E, low, high, eq = model_dh_only(sum_dev, homa_avg)
 
         # Database lookup
-        db_energy, db_avail, db_source = find_database_energy(mol)
+        db_energy, db_avail, db_source, db_smiles = find_database_energy(mol)
 
         # Display predicted
         st.markdown(f"**Equation:** `{eq}`")
@@ -162,11 +201,15 @@ def main():
 
         # Display database info
         if not db_avail:
-            st.warning("No database files found. Add COMPAS_XTB_MS_WEBAPP_DATA.csv or compas-3D.csv to enable lookup.")
-        elif db_energy is None:
-            st.info("No database match found for this isomer.")
+            st.warning(
+                "No database files found. Add COMPAS_XTB_MS_WEBAPP_DATA.csv or compas-3D.csv to enable lookup."
+            )
         else:
-            st.success(f"Database ΔE: {db_energy:.3f} kJ/mol ({db_source})")
+            st.markdown(f"**Lookup SMILES:** {db_smiles}")
+            if db_energy is None:
+                st.info("No database match found for this isomer.")
+            else:
+                st.success(f"Database ΔE: {db_energy:.3f} kJ/mol ({db_source})")
 
 if __name__ == '__main__':
     main()

@@ -48,29 +48,28 @@ def find_bonded_carbons(mol):
 def analyze_geometry(mol):
     conf = mol.GetConformer()
     bonded = find_bonded_carbons(mol)
-    # bond-angle deviations
+    # build neighbor map for carbons
+    neighbors = {idx: [nb.GetIdx() for nb in mol.GetAtomWithIdx(idx).GetNeighbors()] for atom in mol.GetAtoms() if atom.GetAtomicNum()==6 for idx in [atom.GetIdx()]}
     sum_dev = 0.0
-    count = 0
     angles = []
     dihedrals = []
-    for a1,a2 in bonded:
-        for a3 in [x for x in mol.GetBondedAtoms(mol.GetAtomWithIdx(a2)) if x.GetIdx()!=a1]:
+    # compute angle deviations and dihedrals
+    for a1, a2 in bonded:
+        for a3 in neighbors.get(a2, []):
+            if a3 == a1: continue
             p1 = np.array(conf.GetAtomPosition(a1))
             p2 = np.array(conf.GetAtomPosition(a2))
-            p3 = np.array(conf.GetAtomPosition(a3.GetIdx()))
-            ang = calculate_bond_angle(p1,p2,p3)
+            p3 = np.array(conf.GetAtomPosition(a3))
+            ang = calculate_bond_angle(p1, p2, p3)
             sum_dev += abs(120 - ang)
-            count += 1
             angles.append(ang)
-            for a4 in [x for x in mol.GetBondedAtoms(mol.GetAtomWithIdx(a3.GetIdx())) if x.GetIdx() not in (a2,a1)]:
-                p4 = np.array(conf.GetAtomPosition(a4.GetIdx()))
-                dih = calculate_dihedral(p1,p2,p3,p4)
+            for a4 in neighbors.get(a3, []):
+                if a4 in (a2, a1): continue
+                p4 = np.array(conf.GetAtomPosition(a4))
+                dih = calculate_dihedral(p1, p2, p3, p4)
                 dihedrals.append(dih)
     # RMSD of angles
-    if count>0:
-        rmsd = np.sqrt(np.mean([(120 - a)**2 for a in angles]))
-    else:
-        rmsd = 0.0
+    rmsd = np.sqrt(np.mean([(120 - a)**2 for a in angles])) if angles else 0.0
     return sum_dev, rmsd
 
 
@@ -79,13 +78,10 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
     conf = mol.GetConformer()
     homas = []
     for ring in ri:
-        # check aromatic C
         if all(mol.GetAtomWithIdx(i).GetAtomicNum()==6 and mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
-            lengths = []
-            for i in range(len(ring)):
-                p1 = np.array(conf.GetAtomPosition(ring[i]))
-                p2 = np.array(conf.GetAtomPosition(ring[(i+1)%len(ring)]))
-                lengths.append(np.linalg.norm(p1-p2))
+            lengths = [np.linalg.norm(np.array(conf.GetAtomPosition(ring[i])) -
+                                      np.array(conf.GetAtomPosition(ring[(i+1)%len(ring)])))
+                       for i in range(len(ring))]
             n = len(lengths)
             sum_sq = sum((L - R_opt)**2 for L in lengths)
             homas.append(1 - (alpha/n)*sum_sq)
@@ -93,14 +89,13 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
 
 
 def find_database_energy(mol, csv_file="analysis_results.C44H24.csv"):
-    # match by SMILES
     m0 = Chem.RemoveHs(mol)
     smi = Chem.MolToSmiles(m0)
     try:
         df = pd.read_csv(csv_file)
     except FileNotFoundError:
         return None
-    match = df.loc[df.smiles==smi]
+    match = df.loc[df.smiles == smi]
     if not match.empty:
         return float(match.D4_rel_energy.iloc[0])
     return None
@@ -109,26 +104,32 @@ def find_database_energy(mol, csv_file="analysis_results.C44H24.csv"):
 
 def model_dihedral(sum_dev):
     A, B, MAD = 0.01498026, 5.01448849, 3.618
-    E = A*sum_dev + B; return E, E-MAD, E+MAD, "E = 0.01498026·ΣDihedral + 5.01448849"
+    E = A*sum_dev + B
+    return E, E-MAD, E+MAD, "E = 0.01498026·ΣDihedral + 5.01448849"
 
 def model_xtb(sum_dev, xtb):
     A, B, C, MAD = 0.00678795, 1.07126936, 3.49502511, 2.07925630
-    E = A*sum_dev + B*xtb + C; return E, E-MAD, E+MAD, "E = 0.00678795·ΣDihedral + 1.07126936·XTB + 3.49502511"
+    E = A*sum_dev + B*xtb + C
+    return E, E-MAD, E+MAD, "E = 0.00678795·ΣDihedral + 1.07126936·XTB + 3.49502511"
 
 def model_homa(homa):
-    E = -40.71451171*homa + 49.03884678; return E, None, None, "E = -40.7145·HOMA + 49.0388"
+    E = -40.71451171*homa + 49.03884678
+    return E, None, None, "E = -40.7145·HOMA + 49.0388"
 
 def model_dh(sum_dev, homa):
     A, B, C, MAD = 0.01985355, -314.14544891, 241.66896314, 2.53312351
-    E = A*sum_dev + B*homa + C; return E, E-MAD, E+MAD, "E = 0.01985355·ΣDihedral - 314.1454·HOMA + 241.6690"
+    E = A*sum_dev + B*homa + C
+    return E, E-MAD, E+MAD, "E = 0.01985355·ΣDihedral - 314.1454·HOMA + 241.6690"
 
 def model_ht(homa, xtb):
     A, B, C, MAD = 29.41245664, 1.37801523, -15.68808658, 2.57228594
-    E = A*homa + B*xtb + C; return E, E-MAD, E+MAD, "E = 29.4125·HOMA + 1.3780·XTB - 15.6881"
+    E = A*homa + B*xtb + C
+    return E, E-MAD, E+MAD, "E = 29.4125·HOMA + 1.3780·XTB - 15.6881"
 
 def model_dhr(sum_dev, homa, rmsd):
     A_d, A_h, A_r, C = 0.02082790, -340.97268109, 16.64640654, 236.14120030
-    E = A_d*sum_dev + A_h*homa + A_r*rmsd + C; return E, None, None, "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
+    E = A_d*sum_dev + A_h*homa + A_r*rmsd + C
+    return E, None, None, "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
 
 # ---------- Streamlit App ----------
 
@@ -137,18 +138,16 @@ def main():
     st.title("Isomerization Energy Predictor")
     st.sidebar.header("Options")
 
-    model = st.sidebar.selectbox(
-        "Select prediction model:",
-        [
-            "Dihedral-only",
-            "XTB (requires XTB energy)",
-            "HOMA-only",
-            "Dihedral + HOMA",
-            "HOMA + XTB",
-            "Dihedral + HOMA + XTB",
-            "Database lookup"
-        ]
-    )
+    models = [
+        "Dihedral-only",
+        "HOMA-only",
+        "Dihedral + HOMA",
+        "HOMA + XTB",
+        "Dihedral + HOMA + θRMSD",
+        "XTB (requires XTB energy)"
+    ]
+    # default to D + H + θRMSD
+    model = st.sidebar.selectbox("Select prediction model:", models, index=models.index("Dihedral + HOMA + θRMSD"))
     xtb_val = 0.0
     if "XTB" in model:
         xtb_val = st.sidebar.number_input("XTB energy value:", value=0.0)
@@ -164,37 +163,32 @@ def main():
     sum_dev, rmsd = analyze_geometry(mol)
     homa_avg, _ = homa_aromatic_rings(mol)
     if np.isnan(homa_avg): homa_avg = 0.0
-    db_energy = None
-    if model=="Database lookup":
-        db_energy = find_database_energy(mol)
+    db_energy = find_database_energy(mol)
 
     # Compute
-    if model=="Dihedral-only":
+    if model == "Dihedral-only":
         E, low, high, eq = model_dihedral(sum_dev)
+    elif model == "HOMA-only":
+        E, low, high, eq = model_homa(homa_avg)
+    elif model == "Dihedral + HOMA":
+        E, low, high, eq = model_dh(sum_dev, homa_avg)
+    elif model == "HOMA + XTB":
+        E, low, high, eq = model_ht(homa_avg, xtb_val)
+    elif model == "Dihedral + HOMA + θRMSD":
+        E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
     elif model.startswith("XTB"):
         E, low, high, eq = model_xtb(sum_dev, xtb_val)
-    elif model=="HOMA-only":
-        E, low, high, eq = model_homa(homa_avg)
-    elif model=="Dihedral + HOMA":
-        E, low, high, eq = model_dh(sum_dev, homa_avg)
-    elif model=="HOMA + XTB":
-        E, low, high, eq = model_ht(homa_avg, xtb_val)
-    elif model=="Dihedral + HOMA + XTB":
-        # fallback to D+H+R model for this choice
-        E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
-    elif model=="Database lookup":
-        if db_energy is not None:
-            st.success(f"Database ΔE: {db_energy:.3f} kJ/mol")
-        else:
-            st.warning("No database match found for this isomer.")
-        return
 
-    # Display results
+    # Display model results
     st.markdown(f"**Equation:** `{eq}`")
     st.markdown(f"**ΣDihedral:** {sum_dev:.3f}   **HOMA:** {homa_avg:.3f}   **θRMSD:** {rmsd:.3f}")
     st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
     if low is not None and high is not None:
         st.markdown(f"_Range: {low:.3f} – {high:.3f} kJ/mol_")
+
+    # Always show database lookup if available
+    if db_energy is not None:
+        st.success(f"Database ΔE: {db_energy:.3f} kJ/mol")
 
 if __name__ == '__main__':
     main()

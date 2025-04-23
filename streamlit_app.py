@@ -71,7 +71,7 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
     return (np.nan,[]) if not homas else (float(np.mean(homas)), homas)
 
 
-def find_database_energy(mol, csv_file="analysis_results.C44H24.csv"):
+def find_database_energy(mol, csv_file="COMPAS_XTB_MS_WEBAPP_DATA.csv"):
     m0=Chem.RemoveHs(mol); smi=Chem.MolToSmiles(m0)
     try: df=pd.read_csv(csv_file)
     except: return None

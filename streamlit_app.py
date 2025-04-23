@@ -1,30 +1,30 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
 
-###############################################################################
-# Geometry helpers (condensed from your analysis pipeline)
-###############################################################################
+# ---------- Geometry & Analysis Helpers ----------
 
 def load_molecule_from_xyz(xyz_text):
-    """Return an RDKit Mol with bonds perceived from XYZ block."""
     mol = Chem.MolFromXYZBlock(xyz_text)
     if mol is None:
-        raise ValueError("Could not parse XYZ; check format.")
+        st.error("Could not parse XYZ file.")
+        return None
     rdDetermineBonds.DetermineBonds(mol)
-    if mol.GetNumConformers() == 0:
-        raise ValueError("XYZ has no coordinates.")
     return mol
 
-# --- small vector helpers ---------------------------------------------------
 
-def _angle(v1, v2):
+def calculate_bond_angle(p1, p2, p3):
+    v1 = p1 - p2
+    v2 = p3 - p2
     v1 /= np.linalg.norm(v1)
     v2 /= np.linalg.norm(v2)
-    return np.degrees(np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0)))
+    cos_theta = np.clip(np.dot(v1, v2), -1.0, 1.0)
+    return np.degrees(np.arccos(cos_theta))
 
-def _dihedral(p1, p2, p3, p4):
+
+def calculate_dihedral(p1, p2, p3, p4):
     b1 = p2 - p1
     b2 = p3 - p2
     b3 = p4 - p3
@@ -32,126 +32,169 @@ def _dihedral(p1, p2, p3, p4):
     n2 = np.cross(b2, b3)
     n1 /= np.linalg.norm(n1)
     n2 /= np.linalg.norm(n2)
-    return np.degrees(np.arccos(np.clip(np.dot(n1, n2), -1.0, 1.0)))
+    cos_theta = np.clip(np.dot(n1, n2), -1.0, 1.0)
+    return np.degrees(np.arccos(cos_theta))
 
-# --- main geometry extraction ----------------------------------------------
 
-def bonded_carbons(mol):
-    return [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()
-            if mol.GetAtomWithIdx(b.GetBeginAtomIdx()).GetAtomicNum()==6 and
-               mol.GetAtomWithIdx(b.GetEndAtomIdx()).GetAtomicNum()==6]
+def find_bonded_carbons(mol):
+    pairs = []
+    for bond in mol.GetBonds():
+        i = bond.GetBeginAtomIdx(); j = bond.GetEndAtomIdx()
+        if mol.GetAtomWithIdx(i).GetAtomicNum()==6 and mol.GetAtomWithIdx(j).GetAtomicNum()==6:
+            pairs.append((i, j))
+    return pairs
 
-def dihedral_and_angle_stats(mol):
-    bc = bonded_carbons(mol)
-    nbrs = {a: [] for pair in bc for a in pair}
-    for a1, a2 in bc:
-        nbrs[a1].append(a2)
-        nbrs[a2].append(a1)
+
+def analyze_geometry(mol):
     conf = mol.GetConformer()
-    sum_abs_120, count_ang, sum_sq_dev = 0.0, 0, 0.0
-    sum_less90, sum_gt90 = 0.0, 0.0
-    dihed_set = set()
-    for a1 in nbrs:
-        for a2 in nbrs[a1]:
+    bonded = find_bonded_carbons(mol)
+    # bond-angle deviations
+    sum_dev = 0.0
+    count = 0
+    angles = []
+    dihedrals = []
+    for a1,a2 in bonded:
+        for a3 in [x for x in mol.GetBondedAtoms(mol.GetAtomWithIdx(a2)) if x.GetIdx()!=a1]:
             p1 = np.array(conf.GetAtomPosition(a1))
             p2 = np.array(conf.GetAtomPosition(a2))
-            for a3 in nbrs[a2]:
-                if a3 == a1:
-                    continue
-                p3 = np.array(conf.GetAtomPosition(a3))
-                ang = _angle(p1-p2, p3-p2)
-                sum_abs_120 += abs(120-ang)
-                sum_sq_dev += (120-ang)**2
-                count_ang += 1
-                for a4 in nbrs[a3]:
-                    if a4 in (a2, a1):
-                        continue
-                    dih_tuple = tuple(sorted((a1,a2,a3,a4)))
-                    if dih_tuple in dihed_set:
-                        continue
-                    dihed_set.add(dih_tuple)
-                    p4 = np.array(conf.GetAtomPosition(a4))
-                    dih = _dihedral(p1, p2, p3, p4)
-                    if dih < 90:
-                        sum_less90 += dih
-                    else:
-                        sum_gt90 += 180 - dih
-    rmsd_bond_angle = np.sqrt(sum_sq_dev/count_ang) if count_ang else 0.0
-    sum_dev = sum_less90 + sum_gt90
-    return sum_dev, sum_abs_120, rmsd_bond_angle
+            p3 = np.array(conf.GetAtomPosition(a3.GetIdx()))
+            ang = calculate_bond_angle(p1,p2,p3)
+            sum_dev += abs(120 - ang)
+            count += 1
+            angles.append(ang)
+            for a4 in [x for x in mol.GetBondedAtoms(mol.GetAtomWithIdx(a3.GetIdx())) if x.GetIdx() not in (a2,a1)]:
+                p4 = np.array(conf.GetAtomPosition(a4.GetIdx()))
+                dih = calculate_dihedral(p1,p2,p3,p4)
+                dihedrals.append(dih)
+    # RMSD of angles
+    if count>0:
+        rmsd = np.sqrt(np.mean([(120 - a)**2 for a in angles]))
+    else:
+        rmsd = 0.0
+    return sum_dev, rmsd
 
-# --- HOMA (unchanged) -------------------------------------------------------
 
 def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
-    ri = mol.GetRingInfo()
+    ri = mol.GetRingInfo().AtomRings()
     conf = mol.GetConformer()
-    ring_homas = []
-    for ring in ri.AtomRings():
-        if any(mol.GetAtomWithIdx(idx).GetAtomicNum()!=6 or
-               not mol.GetAtomWithIdx(idx).GetIsAromatic() for idx in ring):
-            continue
-        bl = []
-        for i in range(len(ring)):
-            a1 = ring[i]
-            a2 = ring[(i+1)%len(ring)]
-            p1 = np.array(conf.GetAtomPosition(a1))
-            p2 = np.array(conf.GetAtomPosition(a2))
-            bl.append(np.linalg.norm(p1-p2))
-        n=len(bl)
-        homa = 1.0 - (alpha/n)*sum((R-R_opt)**2 for R in bl)
-        ring_homas.append(homa)
-    if not ring_homas:
-        return float('nan')
-    return sum(ring_homas)/len(ring_homas)
+    homas = []
+    for ring in ri:
+        # check aromatic C
+        if all(mol.GetAtomWithIdx(i).GetAtomicNum()==6 and mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
+            lengths = []
+            for i in range(len(ring)):
+                p1 = np.array(conf.GetAtomPosition(ring[i]))
+                p2 = np.array(conf.GetAtomPosition(ring[(i+1)%len(ring)]))
+                lengths.append(np.linalg.norm(p1-p2))
+            n = len(lengths)
+            sum_sq = sum((L - R_opt)**2 for L in lengths)
+            homas.append(1 - (alpha/n)*sum_sq)
+    return (np.nan, []) if not homas else (float(np.mean(homas)), homas)
 
-###############################################################################
-# Energy model (C40H22 fit)
-###############################################################################
 
-def energy_c40_fit(sum_dev, avg_homa, rmsd):
-    A_dih = 0.02082790
-    A_homa = -340.97268109
-    A_rmsd = 16.64640654
-    C = 236.14120030
-    return A_dih*sum_dev + A_homa*avg_homa + A_rmsd*rmsd + C
-
-###############################################################################
-# Streamlit UI
-###############################################################################
-
-st.set_page_config(page_title="PAH Isomer Energy Estimator", page_icon="⚛️")
-
-st.title("⚛️ PAH Isomer Energy Estimator (C₄₀H₂₂-trained)")
-st.markdown("Upload an **XYZ** file of your polycyclic aromatic hydrocarbon. The app\ncomputes key geometric descriptors (ΣΔφ, HOMA, RMSD₍angle₎) and estimates the\nisomerisation energy using the regression fitted to the C₄₀H₂₂ data set.")
-
-uploaded = st.file_uploader("XYZ file", type=["xyz"])
-
-if uploaded is not None:
-    xyz_bytes = uploaded.read()
+def find_database_energy(mol, csv_file="analysis_results.C44H24.csv"):
+    # match by SMILES
+    m0 = Chem.RemoveHs(mol)
+    smi = Chem.MolToSmiles(m0)
     try:
-        xyz_text = xyz_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        st.error("File is not UTF‑8 encoded.")
-        st.stop()
-    with st.spinner("Parsing and analysing …"):
-        try:
-            mol = load_molecule_from_xyz(xyz_text)
-            sum_dev, sum_abs_120, rmsd = dihedral_and_angle_stats(mol)
-            avg_homa = homa_aromatic_rings(mol)
-            est_energy = energy_c40_fit(sum_dev, avg_homa, rmsd)
-        except Exception as e:
-            st.exception(e)
-            st.stop()
-    st.success("Analysis complete!")
-    st.subheader("Geometry metrics")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("ΣΔφ (°)", f"{sum_dev:,.1f}")
-    col2.metric("Avg HOMA", f"{avg_homa:0.3f}")
-    col3.metric("RMSDᵦ (°)", f"{rmsd:0.2f}")
+        df = pd.read_csv(csv_file)
+    except FileNotFoundError:
+        return None
+    match = df.loc[df.smiles==smi]
+    if not match.empty:
+        return float(match.D4_rel_energy.iloc[0])
+    return None
 
-    st.subheader("Predicted ΔE (kcal mol⁻¹)")
-    st.latex(r"E = 0.02082790\,\Sigma\lvert120-\varphi\rvert - 340.97268\,\overline{\text{HOMA}} + 16.6464\,\text{RMSD}_{\angle} + 236.141")
-    st.write(f"**{est_energy:,.2f} kcal mol⁻¹**")
+# ---------- Prediction Models ----------
 
-else:
-    st.info("↖️ Upload an XYZ file to begin.")
+def model_dihedral(sum_dev):
+    A, B, MAD = 0.01498026, 5.01448849, 3.618
+    E = A*sum_dev + B; return E, E-MAD, E+MAD, "E = 0.01498026·ΣDihedral + 5.01448849"
+
+def model_xtb(sum_dev, xtb):
+    A, B, C, MAD = 0.00678795, 1.07126936, 3.49502511, 2.07925630
+    E = A*sum_dev + B*xtb + C; return E, E-MAD, E+MAD, "E = 0.00678795·ΣDihedral + 1.07126936·XTB + 3.49502511"
+
+def model_homa(homa):
+    E = -40.71451171*homa + 49.03884678; return E, None, None, "E = -40.7145·HOMA + 49.0388"
+
+def model_dh(sum_dev, homa):
+    A, B, C, MAD = 0.01985355, -314.14544891, 241.66896314, 2.53312351
+    E = A*sum_dev + B*homa + C; return E, E-MAD, E+MAD, "E = 0.01985355·ΣDihedral - 314.1454·HOMA + 241.6690"
+
+def model_ht(homa, xtb):
+    A, B, C, MAD = 29.41245664, 1.37801523, -15.68808658, 2.57228594
+    E = A*homa + B*xtb + C; return E, E-MAD, E+MAD, "E = 29.4125·HOMA + 1.3780·XTB - 15.6881"
+
+def model_dhr(sum_dev, homa, rmsd):
+    A_d, A_h, A_r, C = 0.02082790, -340.97268109, 16.64640654, 236.14120030
+    E = A_d*sum_dev + A_h*homa + A_r*rmsd + C; return E, None, None, "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
+
+# ---------- Streamlit App ----------
+
+def main():
+    st.set_page_config(page_title="Isomerization Energy", layout="centered")
+    st.title("Isomerization Energy Predictor")
+    st.sidebar.header("Options")
+
+    model = st.sidebar.selectbox(
+        "Select prediction model:",
+        [
+            "Dihedral-only",
+            "XTB (requires XTB energy)",
+            "HOMA-only",
+            "Dihedral + HOMA",
+            "HOMA + XTB",
+            "Dihedral + HOMA + XTB",
+            "Database lookup"
+        ]
+    )
+    xtb_val = 0.0
+    if "XTB" in model:
+        xtb_val = st.sidebar.number_input("XTB energy value:", value=0.0)
+
+    xyz_file = st.file_uploader("Upload XYZ file", type="xyz")
+    if not xyz_file:
+        return
+    xyz_text = xyz_file.read().decode("utf-8")
+    mol = load_molecule_from_xyz(xyz_text)
+    if mol is None:
+        return
+
+    sum_dev, rmsd = analyze_geometry(mol)
+    homa_avg, _ = homa_aromatic_rings(mol)
+    if np.isnan(homa_avg): homa_avg = 0.0
+    db_energy = None
+    if model=="Database lookup":
+        db_energy = find_database_energy(mol)
+
+    # Compute
+    if model=="Dihedral-only":
+        E, low, high, eq = model_dihedral(sum_dev)
+    elif model.startswith("XTB"):
+        E, low, high, eq = model_xtb(sum_dev, xtb_val)
+    elif model=="HOMA-only":
+        E, low, high, eq = model_homa(homa_avg)
+    elif model=="Dihedral + HOMA":
+        E, low, high, eq = model_dh(sum_dev, homa_avg)
+    elif model=="HOMA + XTB":
+        E, low, high, eq = model_ht(homa_avg, xtb_val)
+    elif model=="Dihedral + HOMA + XTB":
+        # fallback to D+H+R model for this choice
+        E, low, high, eq = model_dhr(sum_dev, homa_avg, rmsd)
+    elif model=="Database lookup":
+        if db_energy is not None:
+            st.success(f"Database ΔE: {db_energy:.3f} kJ/mol")
+        else:
+            st.warning("No database match found for this isomer.")
+        return
+
+    # Display results
+    st.markdown(f"**Equation:** `{eq}`")
+    st.markdown(f"**ΣDihedral:** {sum_dev:.3f}   **HOMA:** {homa_avg:.3f}   **θRMSD:** {rmsd:.3f}")
+    st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
+    if low is not None and high is not None:
+        st.markdown(f"_Range: {low:.3f} – {high:.3f} kJ/mol_")
+
+if __name__ == '__main__':
+    main()

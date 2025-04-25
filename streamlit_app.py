@@ -189,41 +189,52 @@ def main():
     st.subheader("Lowest-Energy Isomer per DB")
     cols = st.columns(len(DB_DFS) + 1)
     # show uploaded
-    cols[0].markdown("**Uploaded**")
-    cols[0].code(base_smiles)
-    html0 = f"<div id='v0' style='width:200px;height:200px'></div>" + \
-            "<script src='https://3Dmol.org/build/3Dmol.js'></script>" + \
-            f"<script>v=$3Dmol.createViewer('v0',{{backgroundColor:'0xeeeeee'}});v.addModel(`{xyz_txt}`,'xyz');" + \
+    with cols[0]:
+        st.markdown("**Uploaded**")
+        st.code(base_smiles)
+        html0 = (
+            "<div id='v0' style='width:200px;height:200px'></div>"
+            "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+            f"<script>v=$3Dmol.createViewer('v0',{{backgroundColor:'0xeeeeee'}});"
+            f"v.addModel(`{xyz_txt}`,'xyz');"
             "v.setStyle({stick:{}});v.rotate(1,90);v.zoomTo();v.render();</script>"
-    cols[0].components.html(html0, height=200)
+        )
+        components.html(html0, height=200)
 
     for i, (df, col, label) in enumerate(DB_DFS, start=1):
-        if df.empty:
-            cols[i].warning(label)
-            continue
-        subset = df[df.formula == base_formula]
-        if subset.empty:
-            cols[i].info(f"No {label}")
-            continue
-        # pick lowest
-        if col == 'Erel_eV':
-            subset['kj'] = subset[col].astype(float) * 96.485
-            idx = subset['kj'].idxmin()
-            energy = subset.loc[idx, 'kj']
-        else:
-            idx = subset[col].astype(float).idxmin()
-            energy = subset.loc[idx, col]
-        smi_low = subset.loc[idx, 'smiles']
-        # embed geometry
-        mlow = Chem.AddHs(Chem.MolFromSmiles(smi_low))
-        AllChem.EmbedMolecule(mlow, randomSeed=0xf00d)
-        xyz_low = MolToXYZBlock(mlow)
-        cols[i].markdown(f"**{label}**\n{smi_low}\n{energy:.3f} kJ/mol")
-        html = f"<div id='v{i}' style='width:200px;height:200px'></div>" + \
-               "<script src='https://3Dmol.org/build/3Dmol.js'></script>" + \
-               f"<script>v=$3Dmol.createViewer('v{i}',{{backgroundColor:'0xeeeeee'}});v.addModel(`{xyz_low}`,'xyz');" + \
-               "v.setStyle({stick:{}});v.rotate(1,90);v.zoomTo();v.render();</script>"
-        cols[i].components.html(html, height=200)
+        with cols[i]:
+            if df.empty:
+                st.warning(label)
+                continue
+            subset = df[df.formula == base_formula]
+            if subset.empty:
+                st.info(f"No {label}")
+                continue
+            # pick lowest
+            if col == 'Erel_eV':
+                subset = subset.copy()
+                subset['kj'] = subset[col].astype(float) * 96.485
+                idx = subset['kj'].idxmin()
+                energy = subset.loc[idx, 'kj']
+            else:
+                idx = subset[col].astype(float).idxmin()
+                energy = subset.loc[idx, col]
+            smi_low = subset.loc[idx, 'smiles']
+            # embed geometry
+            mlow = Chem.AddHs(Chem.MolFromSmiles(smi_low))
+            AllChem.EmbedMolecule(mlow, randomSeed=0xf00d)
+            xyz_low = MolToXYZBlock(mlow)
+            st.markdown(f"**{label}**
+{smi_low}
+{energy:.3f} kJ/mol")
+            html = (
+                "<div id='v" + str(i) + "' style='width:200px;height:200px'></div>"
+                "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+                f"<script>v=$3Dmol.createViewer('v{i}',{{backgroundColor:'0xeeeeee'}});"
+                f"v.addModel(`{xyz_low}`,'xyz');"
+                "v.setStyle({stick:{}});v.rotate(1,90);v.zoomTo();v.render();</script>"
+            )
+            components.html(html, height=200)
 
 if __name__ == '__main__':
     main()

@@ -95,7 +95,7 @@ def load_db(path, energy_col):
 DB_SPECS = [
     ('COMPAS_XTB_MS_WEBAPP_DATA.csv', 'D4_rel_energy', 'PBE0-D4/6-31G(2df,p)'),
     ('compas-3D.csv',          'Erel_eV',         'CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP'),
-    ('compas-3x.csv',         'xtb_iso_energy',  'GFN2-xTB')
+    ('compas-3x.csv',         'Erel_eV',  'GFN2-xTB')
 ]
 
 # load all DBs

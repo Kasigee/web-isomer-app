@@ -235,7 +235,7 @@ def main():
     try:
         df = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
         orig_file = df.loc[df.smiles == smi, 'file'].iloc[0]
-        prefix = orig_file.split('_')[0]
+        prefix = orig_file.split('_0')[0]
         cands = df[df.file.str.startswith(prefix)]
         if not cands.empty:
             best = cands.loc[cands.D4_rel_energy.idxmin()]
@@ -258,7 +258,7 @@ def main():
         df3 = pd.read_csv("compas-3D.csv")
         df3['file'] = df3['molecule']
         orig3 = df3.loc[df3.smiles == smi, 'file'].iloc[0]
-        prefix3 = orig3.split('_')[0]
+        prefix3 = orig3.split('_0')[0]
         c3 = df3[df3.file.str.startswith(prefix3)]
         if not c3.empty:
             best3 = c3.loc[c3.Erel_eV.idxmin()]
@@ -281,7 +281,7 @@ def main():
         df4 = pd.read_csv("compas-3x.csv")
         df4['file'] = df4['molecule']
         orig4 = df4.loc[df4.smiles == smi, 'file'].iloc[0]
-        prefix4 = orig4.split('_')[0]
+        prefix4 = orig4.split('_0')[0]
         c4 = df4[df4.file.str.startswith(prefix4)]
         if not c4.empty:
             best4 = c4.loc[c4.Erel_eV.idxmin()]

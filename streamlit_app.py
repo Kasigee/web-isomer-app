@@ -256,7 +256,7 @@ def main():
     # compas-3D lowest isomer comparison
     try:
         df3 = pd.read_csv("compas-3D.csv")
-        df3['file'] = df3['molecule ']
+        df3['file'] = df3['molecule']
         orig3 = df3.loc[df3.smiles == smi, 'file'].iloc[0]
         prefix3 = orig3.split('_')[0]
         c3 = df3[df3.file.str.startswith(prefix3)]
@@ -279,7 +279,7 @@ def main():
     # compas-3x lowest isomer comparison
     try:
         df4 = pd.read_csv("compas-3x.csv")
-        df4['file'] = df4['molecule ']
+        df4['file'] = df4['molecule']
         orig4 = df4.loc[df4.smiles == smi, 'file'].iloc[0]
         prefix4 = orig4.split('_')[0]
         c4 = df4[df4.file.str.startswith(prefix4)]

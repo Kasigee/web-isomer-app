@@ -8,10 +8,9 @@ from rdkit.Chem import rdDetermineBonds
 
 # ---------- Page Configuration ----------
 st.set_page_config(page_title="Isomerization Energy", layout="centered")
-
-# Optional: UNE branding colors
+# UNE branding colors
 UNE_GREEN = "#00693e"
-UNE_GOLD  = "#ffd400"
+UNE_GOLD = "#ffd400"
 st.markdown(f"""<style>
 .stApp {{ background-color:{UNE_GREEN}10; }}
 .css-1d391kg {{ color:{UNE_GREEN}; }}
@@ -30,17 +29,14 @@ def load_molecule_from_xyz(xyz_text):
 
 def calculate_bond_angle(p1, p2, p3):
     v1, v2 = p1 - p2, p3 - p2
-    v1 /= np.linalg.norm(v1)
-    v2 /= np.linalg.norm(v2)
+    v1 /= np.linalg.norm(v1); v2 /= np.linalg.norm(v2)
     return np.degrees(np.arccos(np.clip(np.dot(v1, v2), -1.0, 1.0)))
 
 
 def calculate_dihedral(p1, p2, p3, p4):
     b1, b2, b3 = p2 - p1, p3 - p2, p4 - p3
-    n1 = np.cross(b1, b2)
-    n2 = np.cross(b2, b3)
-    n1 /= np.linalg.norm(n1)
-    n2 /= np.linalg.norm(n2)
+    n1, n2 = np.cross(b1, b2), np.cross(b2, b3)
+    n1 /= np.linalg.norm(n1); n2 /= np.linalg.norm(n2)
     return np.degrees(np.arccos(np.clip(np.dot(n1, n2), -1.0, 1.0)))
 
 
@@ -58,182 +54,118 @@ def analyze_geometry(mol):
     bonded = find_bonded_carbons(mol)
     neighbors = defaultdict(list)
     for a, b in bonded:
-        neighbors[a].append(b)
-        neighbors[b].append(a)
+        neighbors[a].append(b); neighbors[b].append(a)
     conf = mol.GetConformer()
-    sum_less = 0.0
-    sum_greater = 0.0
-    sum_sq_dev = 0.0
-    count_angles = 0
-    unique_dihedrals = set()
+    sum_less = sum_greater = sum_sq = 0.0
+    count = 0
+    seen = set()
     for a1 in neighbors:
         for a2 in neighbors[a1]:
             for a3 in neighbors[a2]:
-                if a3 == a1:
-                    continue
-                # bond angle
-                p1 = np.array(conf.GetAtomPosition(a1))
-                p2 = np.array(conf.GetAtomPosition(a2))
-                p3 = np.array(conf.GetAtomPosition(a3))
+                if a3 == a1: continue
+                p1, p2, p3 = np.array(conf.GetAtomPosition(a1)), np.array(conf.GetAtomPosition(a2)), np.array(conf.GetAtomPosition(a3))
                 angle = calculate_bond_angle(p1, p2, p3)
-                sum_sq_dev += (120 - angle) ** 2
-                count_angles += 1
-                # dihedral
+                sum_sq += (120 - angle)**2; count += 1
                 for a4 in neighbors[a3]:
-                    if a4 in (a2, a1):
-                        continue
-                    key = tuple(sorted((a1, a2, a3, a4)))
-                    if key in unique_dihedrals:
-                        continue
-                    unique_dihedrals.add(key)
+                    if a4 in (a1, a2): continue
+                    key = tuple(sorted((a1,a2,a3,a4)))
+                    if key in seen: continue
+                    seen.add(key)
                     p4 = np.array(conf.GetAtomPosition(a4))
-                    dih = calculate_dihedral(p1, p2, p3, p4)
-                    if dih < 90:
-                        sum_less += dih
-                    else:
-                        sum_greater += (180 - dih)
+                    dih = calculate_dihedral(p1,p2,p3,p4)
+                    if dih < 90: sum_less += dih
+                    else: sum_greater += (180 - dih)
     sum_dev = sum_less + sum_greater
-    rmsd = np.sqrt(sum_sq_dev / count_angles) if count_angles > 0 else 0.0
+    rmsd = np.sqrt(sum_sq/count) if count>0 else 0.0
     return sum_dev, rmsd
 
 
 def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
-    rings = mol.GetRingInfo().AtomRings()
-    conf = mol.GetConformer()
-    homas = []
+    rings = mol.GetRingInfo().AtomRings(); conf = mol.GetConformer(); homas=[]
     for ring in rings:
-        if all(mol.GetAtomWithIdx(i).GetAtomicNum() == 6 and mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
-            lengths = [
-                np.linalg.norm(np.array(conf.GetAtomPosition(ring[i])) -
-                               np.array(conf.GetAtomPosition(ring[(i+1) % len(ring)])))
-                for i in range(len(ring))
-            ]
-            n = len(lengths)
-            sum_sq = sum((L - R_opt) ** 2 for L in lengths)
-            homas.append(1 - (alpha / n) * sum_sq)
-    if not homas:
-        return float('nan')
-    return float(np.mean(homas))
+        if all(mol.GetAtomWithIdx(i).GetAtomicNum()==6 and mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
+            lengths=[ np.linalg.norm(np.array(conf.GetAtomPosition(ring[i]))-np.array(conf.GetAtomPosition(ring[(i+1)%len(ring)]))) for i in range(len(ring)) ]
+            n=len(lengths); sum_sq=sum((L-R_opt)**2 for L in lengths)
+            homas.append(1-(alpha/n)*sum_sq)
+    return float(np.mean(homas)) if homas else 0.0
 
 # ---------- Database Energies ----------
 def get_db_energies(smi):
     specs = [
-        ("COMPAS_XTB_MS_WEBAPP_DATA.csv", "D4_rel_energy", "PBE0-D4/6-31G(2df,p)"),
+        ("COMPAS_XTB_MS_WEBAPP_DATA.csv", "D4_rel_energy", "PBE0-D4/6-31G(2df,p)//GFN2-xTB"),
         ("compas-3D.csv", "Erel_eV", "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP"),
-        ("compas-3x.csv", "Erel_eV", "GFN2-xTB")
+        ("compas-3x.csv", "xtb_iso_energy", "GFN2-xTB")
     ]
-    results = []
-    for fn, col, label in specs:
-        if not os.path.exists(fn):
-            continue
-        df = pd.read_csv(fn)
-        match = df.loc[df.smiles == smi]
-        if match.empty:
-            results.append((label, None))
+    out=[]
+    for fn,col,label in specs:
+        if not os.path.exists(fn): continue
+        df=pd.read_csv(fn)
+        m=df.loc[df.smiles==smi]
+        if m.empty: out.append((label,None))
         else:
-            val = match.iloc[0][col]
-            if col == 'Erel_eV':
-                val = val * 96.485
-            results.append((label, float(val)))
-    return results
+            val=float(m.iloc[0][col])
+            if col=="Erel_eV": val*=96.485
+            out.append((label,val))
+    return out
 
 # ---------- Models ----------
-def model_dhr(sum_dev, homa, rmsd):
-    A_d, A_h, A_r, C = 0.02082790, -340.97268109, 16.64640654, 236.14120030
-    eq = "E = 0.02082790·ΣDihedral - 340.9727·HOMA + 16.6464·θRMSD + 236.1412"
-    return A_d*sum_dev + A_h*homa + A_r*rmsd + C, eq
+def model_dhr(sum_dev,homa,rmsd): A_d,A_h,A_r,C=0.02082790,-340.97268109,16.64640654,236.14120030; eq="E=0.0208279·ΣDihedral-340.9727·HOMA+16.6464·θRMSD+236.1412"; return A_d*sum_dev+A_h*homa+A_r*rmsd+C,eq
 
-def model_dihedral_only(sum_dev):
-    A, B = 0.01506654, 5.26542057
-    eq = "E = 0.01506654·ΣDihedral + 5.26542057"
-    return A*sum_dev + B, eq
+def model_dihedral(sum_dev): A,B=0.01506654,5.26542057; eq="E=0.01506654·ΣDihedral+5.2654"; return A*sum_dev+B,eq
 
-def model_homa_only(homa):
-    A, B = -83.95374901, 81.47198711
-    eq = "E = -83.9537·HOMA + 81.4720"
-    return A*homa + B, eq
+def model_homa(homa): A,B=-83.95374901,81.47198711; eq="E=-83.9537·HOMA+81.4720"; return A*homa+B,eq
 
-def model_dh_only(sum_dev, homa):
-    A_d, A_h, B = 0.02230771, -361.11764751, 275.86109778
-    eq = "E = 0.02230771·ΣDihedral - 361.1176·HOMA + 275.8611"
-    return A_d*sum_dev + A_h*homa + B, eq
+def model_dh(sum_dev,homa): A_d,A_h,B=0.02230771,-361.11764751,275.86109778; eq="E=0.0223077·ΣDihedral-361.1176·HOMA+275.8611"; return A_d*sum_dev+A_h*homa+B,eq
 
-def model_xtb_only(xtb):
-    A, B = 1.43801209, 0.57949987
-    eq = "E = 1.43801209·XTB + 0.57949987"
-    return A*xtb + B, eq
+def model_xtb(xtb): A,B=1.43801209,0.57949987; eq="E=1.4380·XTB+0.5795"; return A*xtb+B,eq
 
-def model_dihedral_xtb(sum_dev, xtb):
-    A_d, B_xtb, C = 0.00678795, 1.07126936, 3.49502511
-    eq = "E = 0.00678795·ΣDihedral + 1.07126936·XTB + 3.49502511"
-    return A_d*sum_dev + B_xtb*xtb + C, eq
+def model_dx(sum_dev,xtb): A_d,B_x,C=0.00678795,1.07126936,3.49502511; eq="E=0.006788·ΣDihedral+1.0713·XTB+3.4950"; return A_d*sum_dev+B_x*xtb+C,eq
 
-# ---------- Streamlit App ----------
+# ---------- Main ----------
 def main():
     st.title("Isomerization Energy Predictor")
-    # upload
-    xyz = st.file_uploader("Upload XYZ file", type="xyz")
-    if not xyz:
-        return
-    if not st.button("Calculate"):
-        return
-    xyz_text = xyz.read().decode()
-    mol = load_molecule_from_xyz(xyz_text)
-    if mol is None:
-        return
-    smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
-    st.markdown(f"**SMILES:** {smi}")
-    # compute
-    sum_dev, rmsd = analyze_geometry(mol)
-    homa_avg = homa_aromatic_rings(mol)
-    models = [
-        "Dihedral + HOMA + θRMSD",
-        "Dihedral-only",
-        "HOMA-only",
-        "Dihedral + HOMA",
-        "XTB-only",
-        "Dihedral + XTB"
-    ]
-    choice = st.sidebar.selectbox("Model:", models, index=0)
-    xtb_val = None
-    if choice in ("XTB-only", "Dihedral + XTB"):
-        xtb_val = st.sidebar.number_input("XTB energy (kJ/mol):", value=0.0)
-    # predict
-    if choice == "Dihedral + HOMA + θRMSD":
-        E_pred, eq = model_dhr(sum_dev, homa_avg, rmsd)
-    elif choice == "Dihedral-only":
-        E_pred, eq = model_dihedral_only(sum_dev)
-    elif choice == "HOMA-only":
-        E_pred, eq = model_homa_only(homa_avg)
-    elif choice == "Dihedral + HOMA":
-        E_pred, eq = model_dh_only(sum_dev, homa_avg)
-    elif choice == "XTB-only":
-        E_pred, eq = model_xtb_only(xtb_val)
-    else:  # Dihedral + XTB
-        E_pred, eq = model_dihedral_xtb(sum_dev, xtb_val)
-    # display results
+    # session init
+    if 'xyz' not in st.session_state: st.session_state.xyz=None; st.session_state.prev=None; st.session_state.comp=None
+    uploaded=st.file_uploader("Upload XYZ file",type="xyz")
+    if uploaded:
+        txt=uploaded.read().decode()
+        if txt!=st.session_state.prev:
+            st.session_state.xyz=txt; st.session_state.prev=txt; st.session_state.comp=None
+    # auto-calc on new upload or button
+    trigger=(st.session_state.xyz and st.session_state.xyz!=st.session_state.comp)
+    if st.sidebar.button("Calculate"): trigger=True
+    # Model select
+    models=["Dihedral+HOMA+θRMSD","Dihedral-only","HOMA-only","Dihedral+HOMA","XTB-only","Dihedral+XTB"]
+    choice=st.sidebar.selectbox("Model:",models,index=0,key='model')
+    # XTB input
+    xtb_val=None
+    if choice in ("XTB-only","Dihedral+XTB"): xtb_val=st.sidebar.number_input("XTB energy (kJ/mol)",value=0.0,key='xtb')
+    if not trigger: return
+    st.session_state.comp=st.session_state.xyz
+    mol=load_molecule_from_xyz(st.session_state.xyz)
+    if not mol: return
+    smi=Chem.MolToSmiles(Chem.RemoveHs(mol)); st.markdown(f"**SMILES:** {smi}")
+    sum_dev,rmsd=analyze_geometry(mol)
+    homa=homa_aromatic_rings(mol)
+    # choose model
+    if choice=="Dihedral+HOMA+θRMSD": E,eq=model_dhr(sum_dev,homa,rmsd)
+    elif choice=="Dihedral-only": E,eq=model_dihedral(sum_dev)
+    elif choice=="HOMA-only": E,eq=model_homa(homa)
+    elif choice=="Dihedral+HOMA": E,eq=model_dh(sum_dev,homa)
+    elif choice=="XTB-only": E,eq=model_xtb(xtb_val)
+    else: E,eq=model_dx(sum_dev,xtb_val)
     st.markdown(f"**Equation:** {eq}")
-    cols = [f"ΣDihedral: {sum_dev:.3f}", f"HOMA: {homa_avg:.3f}", f"θRMSD: {rmsd:.3f}"]
-    if xtb_val is not None:
-        cols.append(f"XTB: {xtb_val:.3f}")
-    st.markdown("   ".join([f"**{c}**" for c in cols]))
-    st.markdown(f"## Predicted ΔE = {E_pred:.3f} kJ/mol")
-    # database energies
-    st.subheader("Database Energies (uploaded isomer)")
-    for label, val in get_db_energies(smi):
-        if val is None:
-            st.info(f"No match in {label}")
-        else:
-            st.markdown(f"**{label}: {val:.3f} kJ/mol**")
+    parts=[f"ΣDihedral: {sum_dev:.3f}",f"HOMA: {homa:.3f}",f"θRMSD: {rmsd:.3f}"]
+    if xtb_val is not None: parts.append(f"XTB: {xtb_val:.3f}")
+    st.markdown("   ".join([f"**{p}**" for p in parts]))
+    st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
+    # DB energies
+    st.subheader("Database Energies")
+    for label,val in get_db_energies(smi):
+        if val is None: st.info(f"No match in {label}")
+        else: st.markdown(f"**{label}: {val:.3f} kJ/mol**")
     # 3Dmol viewer
-    html = (
-        f"<div id='viewer' style='width:400px;height:300px'></div>"
-        "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-        f"<script>v=$3Dmol.createViewer('viewer',{{backgroundColor:'0xeeeeee'}});"
-        f"v.addModel(`{xyz_text}`,'xyz');"
-        "v.setStyle({stick:{}});v.rotate(1,90);v.zoomTo();v.render();</script>"
-    )
-    components.html(html, height=320)
+    html=f"<div id='view' style='width:400px;height:300px'></div><script src='https://3Dmol.org/build/3Dmol.js'></script><script>v=$3Dmol.createViewer('view',{{backgroundColor:'0xeeeeee'}});v.addModel(`{st.session_state.xyz}`,'xyz');v.setStyle({{stick:{}}});v.rotate(1,90);v.zoomTo();v.render();</script>"
+    components.html(html,height=320)
 
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()

@@ -228,16 +228,33 @@ def main():
     )
     components.html(html, height=320)
 
-    # 2D depiction (optional)
-    try:
-        from rdkit.Chem import Draw
-        mol2d = Chem.MolFromSmiles(smi)
-        if mol2d:
-            img = Draw.MolToImage(mol2d, size=(300, 300))
-            st.subheader("2D Structure (from SMILES)")
-            st.image(img, use_column_width=False)
-    except Exception:
-        st.warning("2D depiction skipped: drawing dependencies unavailable.")
+    # Generate a second 3D structure from SMILES
+from rdkit.Chem import AllChem
+from rdkit.Chem.rdmolfiles import MolToXYZBlock
+
+def smiles_to_xyz(smiles, optimize=True):
+    m = Chem.MolFromSmiles(smiles)
+    m = Chem.AddHs(m)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = 42
+    AllChem.EmbedMolecule(m, params)
+    if optimize:
+        AllChem.MMFFOptimizeMolecule(m)
+    return MolToXYZBlock(m)
+
+xyz_block = smiles_to_xyz(smi)
+# Second 3Dmol.js viewer for SMILES-derived structure
+html2 = (
+    "<div id='view2' style='width:400px;height:300px'></div>"
+    "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+    "<script>"
+    "var v2 = $3Dmol.createViewer('view2',{backgroundColor:'0xeeeeee'});"
+    "v2.addModel(`" + xyz_block + "`,'xyz');"
+    "v2.setStyle({stick:{}});"
+    "v2.rotate(1,90);v2.zoomTo();v2.render();"
+    "</script>"
+)
+components.html(html2, height=320)
 
 if __name__ == '__main__':
     main()

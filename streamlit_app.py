@@ -98,7 +98,7 @@ def get_db_energies(smi):
 def model_dhr(sum_dev,homa,rmsd): return (0.02082790*sum_dev -340.97268109*homa +16.64640654*rmsd +236.14120030, "E=0.0208·ΣDihedral-340.97·HOMA+16.65·θRMSD+236.14")
 def model_dihedral(sum_dev): return (0.01506654*sum_dev+5.26542057, "E=0.01507·ΣDihedral+5.2654")
 def model_homa(homa):    return (-83.95374901*homa+81.47198711, "E=-83.95·HOMA+81.47")
-def model_dh(sum_dev,homa):return (0.02230771*sum_dev -361.11764751*homa +275.86109778, "E=0.02231·ΣDihedral-361.12·HOMA+275.86")
+def model_dh(sum_dev,homa): return (0.02230771*sum_dev -361.11764751*homa +275.86109778, "E=0.02231·ΣDihedral-361.12·HOMA+275.86")
 def model_xtb(xtb):      return (1.43801209*xtb+0.57949987, "E=1.4380·XTB+0.5795")
 def model_dx(sum_dev,xtb):return (0.00678795*sum_dev +1.07126936*xtb +3.49502511, "E=0.00679·ΣDihedral+1.0713·XTB+3.4950")
 

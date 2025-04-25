@@ -179,10 +179,10 @@ def main():
     # DB energies
     st.subheader("Database Energies")
     for label,val in get_db_energies(smi):
-        if val is None: st.info(f"No match in {label}")
-        else: st.markdown(f"**{label}: {val:.3f} kJ/mol**")
+        if val is None: st.info(f"No match in {label}"  )
+        else: st.markdown(f"**{label}: {val:.3f} kJ/mol**"  )
 
-    # Original 3D
+    # Original 3D viewer
     html1 = (
         "<div id='v1' style='width:400px;height:300px'></div>"
         "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
@@ -192,7 +192,7 @@ def main():
     )
     components.html(html1, height=320)
 
-        # Lowest-energy isomer via SMILES (PBE0-D4 database)
+    # PBE0-D4 comparison
     try:
         df_db = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
         orig = df_db.loc[df_db.smiles == smi, 'file'].iloc[0]
@@ -206,22 +206,20 @@ def main():
             html2 = (
                 "<div id='v2' style='width:400px;height:300px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-                "<script>"
-                "var v2=$3Dmol.createViewer('v2',{backgroundColor:'0xeeeeee'});"
+                "<script>var v2=$3Dmol.createViewer('v2',{backgroundColor:'0xeeeeee'});"
                 f"v2.addModel(`{xyz_low}`,'xyz');"
-                "v2.setStyle({stick:{}});v2.rotate(1,90);v2.zoomTo();v2.render();"
-                "</script>"
+                "v2.setStyle({stick:{}});v2.rotate(1,90);v2.zoomTo();v2.render();</script>"
             )
             components.html(html2, height=320)
     except Exception as e:
         st.warning(f"Could not load PBE0-D4 comparison: {e}")
 
-    # Lowest-energy isomer via SMILES (compas-3D database)
+    # compas-3D comparison
     try:
         df_3d = pd.read_csv("compas-3D.csv")
-        orig3 = df_3d.loc[df_3d.smiles == smi, 'file'].iloc[0]
+        orig3 = df_3d.loc[df_3d.smiles == smi, 'molecule '].iloc[0]
         prefix3 = '_'.join(orig3.split('_')[:2])
-        cand3 = df_3d[df_3d.file.str.startswith(prefix3)]
+        cand3 = df_3d[df_3d['molecule '].str.startswith(prefix3)]
         if not cand3.empty:
             best3 = cand3.loc[cand3.Erel_eV.idxmin()]
             low3_smi = best3.smiles
@@ -230,22 +228,20 @@ def main():
             html3 = (
                 "<div id='v3' style='width:400px;height:300px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-                "<script>"
-                "var v3=$3Dmol.createViewer('v3',{backgroundColor:'0xeeeeee'});"
+                "<script>var v3=$3Dmol.createViewer('v3',{backgroundColor:'0xeeeeee'});"
                 f"v3.addModel(`{xyz3}`,'xyz');"
-                "v3.setStyle({stick:{}});v3.rotate(1,90);v3.zoomTo();v3.render();"
-                "</script>"
+                "v3.setStyle({stick:{}});v3.rotate(1,90);v3.zoomTo();v3.render();</script>"
             )
             components.html(html3, height=320)
     except Exception as e:
         st.warning(f"Could not load compas-3D comparison: {e}")
 
-    # Lowest-energy isomer via SMILES (compas-3x database)
+    # compas-3x comparison
     try:
         df_x = pd.read_csv("compas-3x.csv")
-        origx = df_x.loc[df_x.smiles == smi, 'file'].iloc[0]
+        origx = df_x.loc[df_x.smiles == smi, 'molecule '].iloc[0]
         prefixx = '_'.join(origx.split('_')[:2])
-        candx = df_x[df_x.file.str.startswith(prefixx)]
+        candx = df_x[df_x['molecule '].str.startswith(prefixx)]
         if not candx.empty:
             bestx = candx.loc[candx.Erel_eV.idxmin()]
             lowx_smi = bestx.smiles
@@ -254,11 +250,9 @@ def main():
             htmlx = (
                 "<div id='v4' style='width:400px;height:300px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-                "<script>"
-                "var v4=$3Dmol.createViewer('v4',{backgroundColor:'0xeeeeee'});"
+                "<script>var v4=$3Dmol.createViewer('v4',{backgroundColor:'0xeeeeee'});"
                 f"v4.addModel(`{xyzx}`,'xyz');"
-                "v4.setStyle({stick:{}});v4.rotate(1,90);v4.zoomTo();v4.render();"
-                "</script>"
+                "v4.setStyle({stick:{}});v4.rotate(1,90);v4.zoomTo();v4.render();</script>"
             )
             components.html(htmlx, height=320)
     except Exception as e:

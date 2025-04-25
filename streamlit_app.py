@@ -97,15 +97,25 @@ def get_db_energies(smi):
         ("compas-3x.csv", "xtb_iso_energy", "GFN2-xTB")
     ]
     out=[]
-    for fn,col,label in specs:
-        if not os.path.exists(fn): continue
-        df=pd.read_csv(fn)
-        m=df.loc[df.smiles==smi]
-        if m.empty: out.append((label,None))
+    for fn, col, label in specs:
+        if not os.path.exists(fn):
+            out.append((label, None))
+            continue
+        df = pd.read_csv(fn)
+        if col not in df.columns:
+            out.append((label, None))
+            continue
+        m = df.loc[df.smiles == smi]
+        if m.empty:
+            out.append((label, None))
         else:
-            val=float(m.iloc[0][col])
-            if col=="Erel_eV": val*=96.485
-            out.append((label,val))
+            try:
+                val = float(m.iloc[0][col])
+                if col == "Erel_eV":
+                    val *= 96.485
+                out.append((label, val))
+            except Exception:
+                out.append((label, None))
     return out
 
 # ---------- Models ----------

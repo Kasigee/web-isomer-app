@@ -135,12 +135,11 @@ def model_dx(sum_dev,xtb): A_d,B_x,C=0.00678795,1.07126936,3.49502511; eq="E=0.0
 def main():
     st.title("Isomerization Energy Predictor")
 
-    # Upload widget
-    if 'xyz' not in st.session_state:
-        st.session_state.xyz = None
-        st.session_state.prev = None
-        st.session_state.last_comp = None
-    uploaded = st.file_uploader("Upload XYZ file", type="xyz")
+    # Upload widget and session state init
+    for key in ('xyz', 'prev', 'last_comp'):
+        if key not in st.session_state:
+            st.session_state[key] = None
+    uploaded = st.file_uploader("Upload XYZ file", type="xyz")("Upload XYZ file", type="xyz")
     if uploaded:
         txt = uploaded.read().decode()
         if txt != st.session_state.prev:
@@ -229,13 +228,16 @@ def main():
     )
     components.html(html, height=320)
 
-    # 2D depiction
-    from rdkit.Chem import Draw
-    mol2d = Chem.MolFromSmiles(smi)
-    if mol2d:
-        img = Draw.MolToImage(mol2d, size=(300, 300))
-        st.subheader("2D Structure (from SMILES)")
-        st.image(img, use_column_width=False)
+    # 2D depiction (optional)
+    try:
+        from rdkit.Chem import Draw
+        mol2d = Chem.MolFromSmiles(smi)
+        if mol2d:
+            img = Draw.MolToImage(mol2d, size=(300, 300))
+            st.subheader("2D Structure (from SMILES)")
+            st.image(img, use_column_width=False)
+    except Exception:
+        st.warning("2D depiction skipped: drawing dependencies unavailable.")
 
 if __name__ == '__main__':
     main()

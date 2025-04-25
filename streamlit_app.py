@@ -20,7 +20,8 @@ st.markdown(f"""<style>
 </style>""", unsafe_allow_html=True)
 
 # ---------- Geometry Helpers ----------
-def load_molecule_from_xyz(xyz_text):
+@st.cache_data
+ def load_molecule_from_xyz(xyz_text):
     mol = Chem.MolFromXYZBlock(xyz_text)
     if mol is None:
         st.error("Could not parse XYZ file.")
@@ -93,7 +94,8 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
     return float(np.mean(homas)) if homas else 0.0
 
 # ---------- Database Lookup (three sources) ----------
-def load_db(path, energy_col):
+@st.cache_data
+ def load_db(path, energy_col):
     df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
     if not df.empty:
         df['formula'] = df['smiles'].apply(
@@ -107,6 +109,7 @@ DB_SPECS = [
     ('compas-3x.csv', 'xtb_iso_energy', 'GFN2-xTB')
 ]
 
+# Only load DBs once
 DB_DFS = [(load_db(fn, col), col, label) for fn, col, label in DB_SPECS]
 
 # ---------- Models ----------
@@ -167,33 +170,3 @@ def main():
     html0 = f"<div id='v0' style='width:200px;height:200px;'></div>" + \
             "<script src='https://3Dmol.org/build/3Dmol.js'></script>" + \
             f"<script>v=$3Dmol.createViewer('v0',{{backgroundColor:'0xeeeeee'}});v.addModel(`{xyz_txt}`,'xyz');v.setStyle({{stick:{{}}}});v.rotate(1,90);v.zoomTo();v.render();</script>"
-    cols[0].components.html(html0, height=200)
-
-    for i, (df, col, label) in enumerate(DB_DFS, start=1):
-        if df.empty or 'formula' not in df.columns:
-            cols[i].warning(f"Missing data for {label}")
-            continue
-        subset = df[df.formula == base_formula]
-        if subset.empty:
-            cols[i].info(f"No {label} for formula {base_formula}")
-            continue
-        if col == 'Erel_eV':
-            subset['val_kj'] = subset[col].astype(float) * 96.485
-            idx = subset['val_kj'].idxmin()
-            energy = subset.loc[idx, 'val_kj']
-        else:
-            idx = subset[col].astype(float).idxmin()
-            energy = subset.loc[idx, col]
-        smi_low = subset.loc[idx, 'smiles']
-        mol_low = Chem.MolFromSmiles(smi_low)
-        mol_low = Chem.AddHs(mol_low)
-        AllChem.EmbedMolecule(mol_low, randomSeed=0xf00d)
-        xyz_low = MolToXYZBlock(mol_low)
-        cols[i].markdown(f"**{label}**\n{smi_low}\nEnergy: {energy:.3f} kJ/mol")
-        html = f"<div id='v{i}' style='width:200px;height:200px;'></div>" + \
-               "<script src='https://3Dmol.org/build/3Dmol.js'></script>" + \
-               f"<script>v=$3Dmol.createViewer('v{i}',{{backgroundColor:'0xeeeeee'}});v.addModel(`{xyz_low}`,'xyz');v.setStyle({{stick:{{}}}});v.rotate(1,90);v.zoomTo();v.render();</script>"
-        cols[i].components.html(html, height=200)
-
-if __name__ == '__main__':
-    main()

@@ -134,47 +134,88 @@ def model_dx(sum_dev,xtb): A_d,B_x,C=0.00678795,1.07126936,3.49502511; eq="E=0.0
 # ---------- Main ----------
 def main():
     st.title("Isomerization Energy Predictor")
-    # session init
-    if 'xyz' not in st.session_state: st.session_state.xyz=None; st.session_state.prev=None; st.session_state.comp=None
-    uploaded=st.file_uploader("Upload XYZ file",type="xyz")
+
+    # Upload widget
+    if 'xyz' not in st.session_state:
+        st.session_state.xyz = None
+        st.session_state.prev = None
+        st.session_state.last_comp = None
+    uploaded = st.file_uploader("Upload XYZ file", type="xyz")
     if uploaded:
-        txt=uploaded.read().decode()
-        if txt!=st.session_state.prev:
-            st.session_state.xyz=txt; st.session_state.prev=txt; st.session_state.comp=None
-    # auto-calc on new upload or button
-    trigger=(st.session_state.xyz and st.session_state.xyz!=st.session_state.comp)
-    if st.sidebar.button("Calculate"): trigger=True
-    # Model select
-    models=["Dihedral+HOMA+θRMSD","Dihedral-only","HOMA-only","Dihedral+HOMA","XTB-only","Dihedral+XTB"]
-    choice=st.sidebar.selectbox("Model:",models,index=0,key='model')
-    # XTB input
-    xtb_val=None
-    if choice in ("XTB-only","Dihedral+XTB"): xtb_val=st.sidebar.number_input("XTB energy (kJ/mol)",value=0.0,key='xtb')
-    if not trigger: return
-    st.session_state.comp=st.session_state.xyz
-    mol=load_molecule_from_xyz(st.session_state.xyz)
-    if not mol: return
-    smi=Chem.MolToSmiles(Chem.RemoveHs(mol)); st.markdown(f"**SMILES:** {smi}")
-    sum_dev,rmsd=analyze_geometry(mol)
-    homa=homa_aromatic_rings(mol)
-    # choose model
-    if choice=="Dihedral+HOMA+θRMSD": E,eq=model_dhr(sum_dev,homa,rmsd)
-    elif choice=="Dihedral-only": E,eq=model_dihedral(sum_dev)
-    elif choice=="HOMA-only": E,eq=model_homa(homa)
-    elif choice=="Dihedral+HOMA": E,eq=model_dh(sum_dev,homa)
-    elif choice=="XTB-only": E,eq=model_xtb(xtb_val)
-    else: E,eq=model_dx(sum_dev,xtb_val)
+        txt = uploaded.read().decode()
+        if txt != st.session_state.prev:
+            st.session_state.xyz = txt
+            st.session_state.prev = txt
+
+    # Sidebar inputs
+    models = [
+        "Dihedral+HOMA+θRMSD",
+        "Dihedral-only",
+        "HOMA-only",
+        "Dihedral+HOMA",
+        "XTB-only",
+        "Dihedral+XTB"
+    ]
+    choice = st.sidebar.selectbox("Model:", models, key='model')
+    xtb_val = None
+    if choice in ("XTB-only", "Dihedral+XTB"):
+        xtb_val = st.sidebar.number_input("XTB energy (kJ/mol)", value=0.0, key='xtb_energy')
+
+    compute = False
+    # auto-run on new upload
+    if st.session_state.xyz and st.session_state.xyz != st.session_state.last_comp:
+        compute = True
+    # manual trigger
+    if st.sidebar.button("Calculate"):
+        compute = True
+
+    if not compute:
+        return
+
+    # mark computed
+    st.session_state.last_comp = st.session_state.xyz
+
+    # Load molecule
+    mol = load_molecule_from_xyz(st.session_state.xyz)
+    if not mol:
+        return
+
+    # Compute metrics
+    smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
+    st.markdown(f"**SMILES:** {smi}")
+    sum_dev, rmsd = analyze_geometry(mol)
+    homa = homa_aromatic_rings(mol)
+
+    # Prediction
+    if choice == "Dihedral+HOMA+θRMSD":
+        E, eq = model_dhr(sum_dev, homa, rmsd)
+    elif choice == "Dihedral-only":
+        E, eq = model_dihedral(sum_dev)
+    elif choice == "HOMA-only":
+        E, eq = model_homa(homa)
+    elif choice == "Dihedral+HOMA":
+        E, eq = model_dh(sum_dev, homa)
+    elif choice == "XTB-only":
+        E, eq = model_xtb(xtb_val)
+    else:  # Dihedral+XTB
+        E, eq = model_dx(sum_dev, xtb_val)
+
     st.markdown(f"**Equation:** {eq}")
-    parts=[f"ΣDihedral: {sum_dev:.3f}",f"HOMA: {homa:.3f}",f"θRMSD: {rmsd:.3f}"]
-    if xtb_val is not None: parts.append(f"XTB: {xtb_val:.3f}")
+    parts = [f"ΣDihedral: {sum_dev:.3f}", f"HOMA: {homa:.3f}", f"θRMSD: {rmsd:.3f}"]
+    if xtb_val is not None:
+        parts.append(f"XTB: {xtb_val:.3f}")
     st.markdown("   ".join([f"**{p}**" for p in parts]))
     st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
-    # DB energies
+
+    # Database Energies
     st.subheader("Database Energies")
-    for label,val in get_db_energies(smi):
-        if val is None: st.info(f"No match in {label}")
-        else: st.markdown(f"**{label}: {val:.3f} kJ/mol**")
-        # 3Dmol viewer
+    for label, val in get_db_energies(smi):
+        if val is None:
+            st.info(f"No match in {label}")
+        else:
+            st.markdown(f"**{label}: {val:.3f} kJ/mol**")
+
+    # 3D viewer
     xyz_txt = st.session_state.xyz
     html = (
         "<div id='view' style='width:400px;height:300px'></div>"
@@ -188,7 +229,7 @@ def main():
     )
     components.html(html, height=320)
 
-    # 2D depiction from SMILES
+    # 2D depiction
     from rdkit.Chem import Draw
     mol2d = Chem.MolFromSmiles(smi)
     if mol2d:
@@ -196,4 +237,5 @@ def main():
         st.subheader("2D Structure (from SMILES)")
         st.image(img, use_column_width=False)
 
-if __name__=='__main__': main()
+if __name__ == '__main__':
+    main()

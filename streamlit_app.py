@@ -144,7 +144,9 @@ def main():
     uploaded = st.file_uploader("Upload XYZ file", type="xyz")
     if not uploaded:
         return
-
+    calc = st.button("Calculate")
+    if not calc:
+        return
     xyz_txt = uploaded.read().decode()
     mol = load_molecule_from_xyz(xyz_txt)
     if mol is None:
@@ -224,9 +226,7 @@ def main():
             mlow = Chem.AddHs(Chem.MolFromSmiles(smi_low))
             AllChem.EmbedMolecule(mlow, randomSeed=0xf00d)
             xyz_low = MolToXYZBlock(mlow)
-            st.markdown(f"**{label}**
-{smi_low}
-{energy:.3f} kJ/mol")
+            st.markdown(f"**{label}** {smi_low} {energy:.3f} kJ/mol")
             html = (
                 "<div id='v" + str(i) + "' style='width:200px;height:200px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
@@ -234,7 +234,7 @@ def main():
                 f"v.addModel(`{xyz_low}`,'xyz');"
                 "v.setStyle({stick:{}});v.rotate(1,90);v.zoomTo();v.render();</script>"
             )
-            components.html(html, height=200)
+            components.html(html, height=200)(html, height=200)
 
 if __name__ == '__main__':
     main()

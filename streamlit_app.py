@@ -214,14 +214,17 @@ def main():
     except Exception as e:
         st.warning(f"Could not load PBE0-D4 comparison: {e}")
 
-    # compas-3D comparison
+        # compas-3D comparison (zero‑energy reference)
     try:
         df_3d = pd.read_csv("compas-3D.csv")
-        orig3 = df_3d.loc[df_3d.smiles == smi, 'molecule '].iloc[0]
-        prefix3 = '_'.join(orig3.split('_')[:2])
-        cand3 = df_3d[df_3d['molecule '].str.startswith(prefix3)]
-        if not cand3.empty:
-            best3 = cand3.loc[cand3.Erel_eV.idxmin()]
+        # Compute formula for each entry
+        df_3d['formula'] = df_3d.smiles.apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))
+        # User's molecular formula
+        user_formula = rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(Chem.RemoveHs(mol)))
+        dff3 = df_3d[df_3d['formula'] == user_formula]
+        if not dff3.empty:
+            # pick the isomer with lowest Erel_eV (should be zero)
+            best3 = dff3.loc[dff3.Erel_eV.idxmin()]
             low3_smi = best3.smiles
             st.subheader(f"Compared to lowest compas-3D isomer (SMILES {low3_smi}):")
             xyz3 = smiles_to_xyz(low3_smi)
@@ -236,7 +239,28 @@ def main():
     except Exception as e:
         st.warning(f"Could not load compas-3D comparison: {e}")
 
-    # compas-3x comparison
+    # compas-3x comparison (zero‑energy reference)
+    try:
+        df_x = pd.read_csv("compas-3x.csv")
+        df_x['formula'] = df_x.smiles.apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))
+        df_fx = df_x[df_x['formula'] == user_formula]
+        if not df_fx.empty:
+            bestx = df_fx.loc[df_fx.Erel_eV.idxmin()]
+            lowx_smi = bestx.smiles
+            st.subheader(f"Compared to lowest compas-3x isomer (SMILES {lowx_smi}):")
+            xyzx = smiles_to_xyz(lowx_smi)
+            htmlx = (
+                "<div id='v4' style='width:400px;height:300px'></div>"
+                "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+                "<script>var v4=$3Dmol.createViewer('v4',{backgroundColor:'0xeeeeee'});"
+                f"v4.addModel(`{xyzx}`,'xyz');"
+                "v4.setStyle({stick:{}});v4.rotate(1,90);v4.zoomTo();v4.render();</script>"
+            )
+            components.html(htmlx, height=320)
+    except Exception as e:
+        st.warning(f"Could not load compas-3x comparison: {e}")
+
+    # end of comparisons
     try:
         df_x = pd.read_csv("compas-3x.csv")
         origx = df_x.loc[df_x.smiles == smi, 'molecule '].iloc[0]

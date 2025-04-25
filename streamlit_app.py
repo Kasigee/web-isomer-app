@@ -41,9 +41,11 @@ def calculate_dihedral(p1, p2, p3, p4):
 
 def analyze_geometry(mol):
     from collections import defaultdict
-    bonded = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()
-               if mol.GetAtomWithIdx(b.GetBeginAtomIdx()).GetAtomicNum() == 6
-               and mol.GetAtomWithIdx(b.GetEndAtomIdx()).GetAtomicNum() == 6]
+    bonded = []
+    for b in mol.GetBonds():
+        i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+        if mol.GetAtomWithIdx(i).GetAtomicNum() == 6 and mol.GetAtomWithIdx(j).GetAtomicNum() == 6:
+            bonded.append((i, j))
     neighbors = defaultdict(list)
     for a, b in bonded:
         neighbors[a].append(b); neighbors[b].append(a)
@@ -55,9 +57,12 @@ def analyze_geometry(mol):
         for a2 in neighbors[a1]:
             for a3 in neighbors[a2]:
                 if a3 == a1: continue
-                p1, p2, p3 = np.array(conf.GetAtomPosition(a1)), np.array(conf.GetAtomPosition(a2)), np.array(conf.GetAtomPosition(a3))
+                p1 = np.array(conf.GetAtomPosition(a1))
+                p2 = np.array(conf.GetAtomPosition(a2))
+                p3 = np.array(conf.GetAtomPosition(a3))
                 angle = calculate_bond_angle(p1, p2, p3)
-                sum_sq += (120 - angle) ** 2; count += 1
+                sum_sq += (120 - angle) ** 2
+                count += 1
                 for a4 in neighbors[a3]:
                     if a4 in (a1, a2): continue
                     key = tuple(sorted((a1, a2, a3, a4)))
@@ -80,11 +85,13 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
     homas = []
     for ring in rings:
         if all(mol.GetAtomWithIdx(i).GetAtomicNum() == 6 and mol.GetAtomWithIdx(i).GetIsAromatic() for i in ring):
-            lengths = [np.linalg.norm(np.array(conf.GetAtomPosition(ring[i])) -
-                                      np.array(conf.GetAtomPosition(ring[(i+1) % len(ring)])))
-                       for i in range(len(ring))]
+            lengths = []
+            for i in range(len(ring)):
+                p1 = np.array(conf.GetAtomPosition(ring[i]))
+                p2 = np.array(conf.GetAtomPosition(ring[(i+1) % len(ring)]))
+                lengths.append(np.linalg.norm(p1 - p2))
             n = len(lengths)
-            sum_sq = sum((L - R_opt)**2 for L in lengths)
+            sum_sq = sum((L - R_opt) ** 2 for L in lengths)
             homas.append(1 - (alpha / n) * sum_sq)
     return float(np.mean(homas)) if homas else 0.0
 
@@ -99,66 +106,96 @@ def get_db_energies(smi):
     for fn, col, label in specs:
         if os.path.exists(fn):
             df = pd.read_csv(fn)
-            if col in df.columns:
-                match = df.loc[df.smiles == smi]
-                if not match.empty:
-                    val = float(match.iloc[0][col])
-                    if col == "Erel_eV": val *= 96.485
-                    out.append((label, val)); continue
+            if col in df.columns and 'smiles' in df.columns:
+                m = df.loc[df.smiles == smi]
+                if not m.empty:
+                    val = float(m.iloc[0][col])
+                    if col == "Erel_eV":
+                        val *= 96.485
+                    out.append((label, val))
+                    continue
         out.append((label, None))
     return out
 
-# ---------- Models ----------
-def model_dhr(sum_dev, homa, rmsd): return (0.02082790*sum_dev - 340.9727*homa + 16.6464*rmsd + 236.1412, "E=0.0208·ΣDihedral-340.97·HOMA+16.65·θRMSD+236.14")
-def model_dihedral(sum_dev): return (0.01506654*sum_dev + 5.2654, "E=0.01507·ΣDihedral+5.2654")
-def model_homa(homa): return (-83.9537*homa + 81.4720, "E=-83.95·HOMA+81.47")
-def model_dh(sum_dev, homa): return (0.0223077*sum_dev - 361.1176*homa + 275.8611, "E=0.02231·ΣDihedral-361.12·HOMA+275.86")
-def model_xtb(xtb): return (1.4380*xtb + 0.5795, "E=1.4380·XTB+0.5795")
-def model_dx(sum_dev, xtb): return (0.006788*sum_dev + 1.0713*xtb + 3.4950, "E=0.00679·ΣDihedral+1.0713·XTB+3.4950")
+
+def model_dhr(sum_dev, homa, rmsd):
+    return (0.02082790 * sum_dev - 340.9727 * homa + 16.6464 * rmsd + 236.1412,
+            "E=0.0208·ΣDihedral-340.97·HOMA+16.65·θRMSD+236.14")
+
+def model_dihedral(sum_dev):
+    return (0.01506654 * sum_dev + 5.2654,
+            "E=0.01507·ΣDihedral+5.2654")
+
+def model_homa(homa):
+    return (-83.9537 * homa + 81.4720,
+            "E=-83.95·HOMA+81.47")
+
+def model_dh(sum_dev, homa):
+    return (0.0223077 * sum_dev - 361.1176 * homa + 275.8611,
+            "E=0.02231·ΣDihedral-361.12·HOMA+275.86")
+
+def model_xtb(xtb):
+    return (1.4380 * xtb + 0.5795,
+            "E=1.4380·XTB+0.5795")
+
+def model_dx(sum_dev, xtb):
+    return (0.006788 * sum_dev + 1.0713 * xtb + 3.4950,
+            "E=0.00679·ΣDihedral+1.0713·XTB+3.4950")
 
 def smiles_to_xyz(smiles):
-    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
-    params = AllChem.ETKDGv3(); params.randomSeed = 42
-    AllChem.EmbedMolecule(mol, params)
-    AllChem.MMFFOptimizeMolecule(mol)
-    return MolToXYZBlock(mol)
+    m = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    params = AllChem.ETKDGv3()
+    params.randomSeed = 42
+    AllChem.EmbedMolecule(m, params)
+    AllChem.MMFFOptimizeMolecule(m)
+    return MolToXYZBlock(m)
 
-# ---------- App ----------
+# ---------- Main ----------
 def main():
     st.title("Isomerization Energy Predictor")
+    # Initialize session
+    for key in ('xyz', 'prev', 'last_comp'):
+        st.session_state.setdefault(key, None)
 
-    # Session init
-    for k in ('xyz', 'prev', 'last_comp'): st.session_state.setdefault(k, None)
-
-    # Uploader
+    # File uploader
     uploaded = st.file_uploader("Upload XYZ file", type="xyz")
     if uploaded:
-        xyz = uploaded.read().decode()
-        if xyz != st.session_state.prev:
-            st.session_state.xyz, st.session_state.prev = xyz, xyz
+        txt = uploaded.read().decode()
+        if txt != st.session_state.prev:
+            st.session_state.xyz = txt
+            st.session_state.prev = txt
 
     # Sidebar
-    models = ["Dihedral+HOMA+θRMSD","Dihedral-only","HOMA-only","Dihedral+HOMA","XTB-only","Dihedral+XTB"]
+    models = [
+        "Dihedral+HOMA+θRMSD",
+        "Dihedral-only",
+        "HOMA-only",
+        "Dihedral+HOMA",
+        "XTB-only",
+        "Dihedral+XTB"
+    ]
     choice = st.sidebar.selectbox("Select model:", models, key='model')
     xtb_val = None
-    if choice in ("XTB-only","Dihedral+XTB"): xtb_val = st.sidebar.number_input("XTB energy (kJ/mol)",0.0)
+    if choice in ("XTB-only", "Dihedral+XTB"):
+        xtb_val = st.sidebar.number_input("XTB energy (kJ/mol)", value=0.0, key='xtb')
 
-    # Trigger
-    new = st.session_state.xyz and st.session_state.xyz != st.session_state.last_comp
-    if st.sidebar.button("Calculate") or new:
+    # Trigger compute
+    new_upload = st.session_state.xyz and st.session_state.xyz != st.session_state.last_comp
+    if st.sidebar.button("Calculate") or new_upload:
         st.session_state.last_comp = st.session_state.xyz
     else:
         return
 
-    # Analyze
+    # Load and analyze
     mol = load_molecule_from_xyz(st.session_state.xyz)
-    if not mol: return
+    if not mol:
+        return
     smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
     st.markdown(f"**SMILES:** {smi}")
     sum_dev, rmsd = analyze_geometry(mol)
     homa = homa_aromatic_rings(mol)
 
-    # Predict
+    # Prediction dispatch
     dispatch = {
         "Dihedral+HOMA+θRMSD": (model_dhr, sum_dev, homa, rmsd),
         "Dihedral-only":        (model_dihedral, sum_dev),
@@ -170,37 +207,38 @@ def main():
     fn, *args = dispatch[choice]
     E, eq = fn(*args)
     st.markdown(f"**Equation:** {eq}")
-    parts = [f"ΣDihedral: {sum_dev:.3f}",f"HOMA: {homa:.3f}",f"θRMSD: {rmsd:.3f}"]
-    if xtb_val is not None: parts.append(f"XTB: {xtb_val:.3f}")
+    parts = [f"ΣDihedral: {sum_dev:.3f}", f"HOMA: {homa:.3f}", f"θRMSD: {rmsd:.3f}"]
+    if xtb_val is not None:
+        parts.append(f"XTB: {xtb_val:.3f}")
     st.markdown("   ".join([f"**{p}**" for p in parts]))
     st.markdown(f"## Predicted ΔE = {E:.3f} kJ/mol")
 
-    # DB energies
+    # Database Energies
     st.subheader("Database Energies")
-    for label,val in get_db_energies(smi):
+    for label, val in get_db_energies(smi):
         if val is None:
             st.info(f"No match in {label}")
         else:
             st.markdown(f"**{label}: {val:.3f} kJ/mol**")
 
-    # Original 3D viewer
+    # Original structure viewer
     html1 = (
         "<div id='v1' style='width:400px;height:300px'></div>"
         "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-        "<script>var v=$3Dmol.createViewer('v1',{backgroundColor:'0xeeeeee'});"
-        f"v.addModel(`{st.session_state.xyz}`,'xyz');"
-        "v.setStyle({stick:{}});v.rotate(1,90);v.zoomTo();v.render();</script>"
+        "<script>var v1=$3Dmol.createViewer('v1',{backgroundColor:'0xeeeeee'});"
+        f"v1.addModel(`{st.session_state.xyz}`,'xyz');"
+        "v1.setStyle({stick:{}});v1.rotate(1,90);v1.zoomTo();v1.render();</script>"
     )
     components.html(html1, height=320)
 
-    # PBE0-D4 comparison
+    # PBE0-D4 lowest isomer comparison
     try:
-        df_db = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
-        orig = df_db.loc[df_db.smiles == smi, 'file'].iloc[0]
-        prefix = orig.split('_')[0]  # formula prefix
-        cand = df_db[df_db.file.str.startswith(prefix)]
-        if not cand.empty:
-            best = cand.loc[cand.D4_rel_energy.idxmin()]
+        df = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
+        orig_file = df.loc[df.smiles == smi, 'file'].iloc[0]
+        prefix = orig_file.split('_')[0]
+        cands = df[df.file.str.startswith(prefix)]
+        if not cands.empty:
+            best = cands.loc[cands.D4_rel_energy.idxmin()]
             low_smi = best.smiles
             st.subheader(f"Compared to lowest PBE0-D4 isomer (SMILES {low_smi}):")
             xyz_low = smiles_to_xyz(low_smi)
@@ -215,17 +253,18 @@ def main():
     except Exception as e:
         st.warning(f"Could not load PBE0-D4 comparison: {e}")
 
-    # compas-3D comparison (zero-energy reference)
+    # compas-3D lowest isomer comparison
     try:
-        df_3d = pd.read_csv("compas-3D.csv")
-        df_3d['formula'] = df_3d.smiles.apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))
-        user_formula = rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(Chem.RemoveHs(mol)))
-        dff3 = df_3d[df_3d['formula'] == user_formula]
-        if not dff3.empty:
-            best3 = dff3.loc[dff3.Erel_eV.idxmin()]
-            low3_smi = best3.smiles
-            st.subheader(f"Compared to lowest compas-3D isomer (SMILES {low3_smi}):")
-            xyz3 = smiles_to_xyz(low3_smi)
+        df3 = pd.read_csv("compas-3D.csv")
+        df3['file'] = df3['molecule ']
+        orig3 = df3.loc[df3.smiles == smi, 'file'].iloc[0]
+        prefix3 = orig3.split('_')[0]
+        c3 = df3[df3.file.str.startswith(prefix3)]
+        if not c3.empty:
+            best3 = c3.loc[c3.Erel_eV.idxmin()]
+            low3 = best3.smiles
+            st.subheader(f"Compared to lowest compas-3D isomer (SMILES {low3}):")
+            xyz3 = smiles_to_xyz(low3)
             html3 = (
                 "<div id='v3' style='width:400px;height:300px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
@@ -237,24 +276,26 @@ def main():
     except Exception as e:
         st.warning(f"Could not load compas-3D comparison: {e}")
 
-    # compas-3x comparison (zero-energy reference)
+    # compas-3x lowest isomer comparison
     try:
-        df_x = pd.read_csv("compas-3x.csv")
-        df_x['formula'] = df_x.smiles.apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))
-        df_fx = df_x[df_x['formula'] == user_formula]
-        if not df_fx.empty:
-            bestx = df_fx.loc[df_fx.Erel_eV.idxmin()]
-            lowx_smi = bestx.smiles
-            st.subheader(f"Compared to lowest compas-3x isomer (SMILES {lowx_smi}):")
-            xyzx = smiles_to_xyz(lowx_smi)
-            htmlx = (
+        df4 = pd.read_csv("compas-3x.csv")
+        df4['file'] = df4['molecule ']
+        orig4 = df4.loc[df4.smiles == smi, 'file'].iloc[0]
+        prefix4 = orig4.split('_')[0]
+        c4 = df4[df4.file.str.startswith(prefix4)]
+        if not c4.empty:
+            best4 = c4.loc[c4.Erel_eV.idxmin()]
+            low4 = best4.smiles
+            st.subheader(f"Compared to lowest compas-3x isomer (SMILES {low4}):")
+            xyz4 = smiles_to_xyz(low4)
+            html4 = (
                 "<div id='v4' style='width:400px;height:300px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
                 "<script>var v4=$3Dmol.createViewer('v4',{backgroundColor:'0xeeeeee'});"
-                f"v4.addModel(`{xyzx}`,'xyz');"
+                f"v4.addModel(`{xyz4}`,'xyz');"
                 "v4.setStyle({stick:{}});v4.rotate(1,90);v4.zoomTo();v4.render();</script>"
             )
-            components.html(htmlx, height=320)
+            components.html(html4, height=320)
     except Exception as e:
         st.warning(f"Could not load compas-3x comparison: {e}")
 

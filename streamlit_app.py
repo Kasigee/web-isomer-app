@@ -4,7 +4,7 @@ import streamlit.components.v1 as components
 import numpy as np
 import pandas as pd
 from rdkit import Chem
-from rdkit.Chem import rdDetermineBonds, AllChem
+from rdkit.Chem import rdDetermineBonds, AllChem, rdMolDescriptors
 from rdkit.Chem.rdmolfiles import MolToXYZBlock
 
 # ---------- Page Configuration ----------
@@ -55,9 +55,7 @@ def analyze_geometry(mol):
         for a2 in neighbors[a1]:
             for a3 in neighbors[a2]:
                 if a3 == a1: continue
-                p1 = np.array(conf.GetAtomPosition(a1))
-                p2 = np.array(conf.GetAtomPosition(a2))
-                p3 = np.array(conf.GetAtomPosition(a3))
+                p1, p2, p3 = np.array(conf.GetAtomPosition(a1)), np.array(conf.GetAtomPosition(a2)), np.array(conf.GetAtomPosition(a3))
                 angle = calculate_bond_angle(p1, p2, p3)
                 sum_sq += (120 - angle) ** 2; count += 1
                 for a4 in neighbors[a3]:
@@ -137,7 +135,7 @@ def main():
     if uploaded:
         xyz = uploaded.read().decode()
         if xyz != st.session_state.prev:
-            st.session_state.xyz = xyz; st.session_state.prev = xyz
+            st.session_state.xyz, st.session_state.prev = xyz, xyz
 
     # Sidebar
     models = ["Dihedral+HOMA+θRMSD","Dihedral-only","HOMA-only","Dihedral+HOMA","XTB-only","Dihedral+XTB"]
@@ -154,8 +152,9 @@ def main():
 
     # Analyze
     mol = load_molecule_from_xyz(st.session_state.xyz)
-    if mol is None: return
-    smi = Chem.MolToSmiles(Chem.RemoveHs(mol)); st.markdown(f"**SMILES:** {smi}")
+    if not mol: return
+    smi = Chem.MolToSmiles(Chem.RemoveHs(mol))
+    st.markdown(f"**SMILES:** {smi}")
     sum_dev, rmsd = analyze_geometry(mol)
     homa = homa_aromatic_rings(mol)
 
@@ -179,8 +178,10 @@ def main():
     # DB energies
     st.subheader("Database Energies")
     for label,val in get_db_energies(smi):
-        if val is None: st.info(f"No match in {label}"  )
-        else: st.markdown(f"**{label}: {val:.3f} kJ/mol**"  )
+        if val is None:
+            st.info(f"No match in {label}")
+        else:
+            st.markdown(f"**{label}: {val:.3f} kJ/mol**")
 
     # Original 3D viewer
     html1 = (
@@ -196,7 +197,7 @@ def main():
     try:
         df_db = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
         orig = df_db.loc[df_db.smiles == smi, 'file'].iloc[0]
-        prefix = '_'.join(orig.split('_')[:2])
+        prefix = orig.split('_')[0]  # formula prefix
         cand = df_db[df_db.file.str.startswith(prefix)]
         if not cand.empty:
             best = cand.loc[cand.D4_rel_energy.idxmin()]
@@ -214,16 +215,13 @@ def main():
     except Exception as e:
         st.warning(f"Could not load PBE0-D4 comparison: {e}")
 
-        # compas-3D comparison (zero‑energy reference)
+    # compas-3D comparison (zero-energy reference)
     try:
         df_3d = pd.read_csv("compas-3D.csv")
-        # Compute formula for each entry
         df_3d['formula'] = df_3d.smiles.apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))
-        # User's molecular formula
         user_formula = rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(Chem.RemoveHs(mol)))
         dff3 = df_3d[df_3d['formula'] == user_formula]
         if not dff3.empty:
-            # pick the isomer with lowest Erel_eV (should be zero)
             best3 = dff3.loc[dff3.Erel_eV.idxmin()]
             low3_smi = best3.smiles
             st.subheader(f"Compared to lowest compas-3D isomer (SMILES {low3_smi}):")
@@ -239,35 +237,13 @@ def main():
     except Exception as e:
         st.warning(f"Could not load compas-3D comparison: {e}")
 
-    # compas-3x comparison (zero‑energy reference)
+    # compas-3x comparison (zero-energy reference)
     try:
         df_x = pd.read_csv("compas-3x.csv")
         df_x['formula'] = df_x.smiles.apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))
         df_fx = df_x[df_x['formula'] == user_formula]
         if not df_fx.empty:
             bestx = df_fx.loc[df_fx.Erel_eV.idxmin()]
-            lowx_smi = bestx.smiles
-            st.subheader(f"Compared to lowest compas-3x isomer (SMILES {lowx_smi}):")
-            xyzx = smiles_to_xyz(lowx_smi)
-            htmlx = (
-                "<div id='v4' style='width:400px;height:300px'></div>"
-                "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-                "<script>var v4=$3Dmol.createViewer('v4',{backgroundColor:'0xeeeeee'});"
-                f"v4.addModel(`{xyzx}`,'xyz');"
-                "v4.setStyle({stick:{}});v4.rotate(1,90);v4.zoomTo();v4.render();</script>"
-            )
-            components.html(htmlx, height=320)
-    except Exception as e:
-        st.warning(f"Could not load compas-3x comparison: {e}")
-
-    # end of comparisons
-    try:
-        df_x = pd.read_csv("compas-3x.csv")
-        origx = df_x.loc[df_x.smiles == smi, 'molecule '].iloc[0]
-        prefixx = '_'.join(origx.split('_')[:2])
-        candx = df_x[df_x['molecule '].str.startswith(prefixx)]
-        if not candx.empty:
-            bestx = candx.loc[candx.Erel_eV.idxmin()]
             lowx_smi = bestx.smiles
             st.subheader(f"Compared to lowest compas-3x isomer (SMILES {lowx_smi}):")
             xyzx = smiles_to_xyz(lowx_smi)

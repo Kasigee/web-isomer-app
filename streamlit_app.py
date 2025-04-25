@@ -232,18 +232,41 @@ def main():
     )
     components.html(html1, height=320)
 
-    # SMILES‐generated XYZ viewer
-    xyz2 = smiles_to_xyz(smi)
-    html2 = (
-        "<div id='v2' style='width:400px;height:300px'></div>"
-        "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-        "<script>"
-        "var v2 = $3Dmol.createViewer('v2',{backgroundColor:'0xeeeeee'});"
-        f"v2.addModel(`{xyz2}`,'xyz');"
-        "v2.setStyle({stick:{}});v2.rotate(1,90);v2.zoomTo();v2.render();"
-        "</script>"
-    )
-    components.html(html2, height=320)
+        # Compare to lowest‐energy isomer from PBE0 database
+    try:
+        df_db = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
+        # get uploaded record to infer prefix
+        uploaded_file = df_db.loc[df_db.smiles == smi, 'file'].iloc[0]
+        # prefix is first two segments
+        parts = uploaded_file.split('_')
+        prefix = '_'.join(parts[:2])
+        # find all matching isomers
+        df_pref = df_db[df_db.file.str.startswith(prefix)]
+        if not df_pref.empty:
+            # lowest-energy isomer
+            row_min = df_pref.loc[df_pref.D4_rel_energy.idxmin()]
+            low_fname = row_min.file + '.xyz'
+            if os.path.exists(low_fname):
+                st.subheader(f"Compared to lowest energy isomer below (with SMILES string {row_min.smiles}):")
+                with open(low_fname) as f:
+                    xyz_low = f.read()
+                html2 = (
+                    "<div id='v2' style='width:400px;height:300px'></div>"
+                    "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+                    "<script>"
+                    "var v2 = $3Dmol.createViewer('v2',{backgroundColor:'0xeeeeee'});"
+                    f"v2.addModel(`{xyz_low}`,'xyz');"
+                    "v2.setStyle({stick:{}});v2.rotate(1,90);v2.zoomTo();v2.render();"
+                    "</script>"
+                )
+                components.html(html2, height=320)
+            else:
+                st.info(f"XYZ file for lowest isomer '{low_fname}' not found.")
+        else:
+            st.info(f"No other isomers found with prefix '{prefix}'.")
+    except Exception as e:
+        st.warning("Could not load lowest-energy isomer structure: " + str(e))
 
 if __name__ == '__main__':
+    main()
     main()

@@ -95,7 +95,7 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
 
 # ---------- Database Lookup (three sources) ----------
 @st.cache_data
- def load_db(path, energy_col):
+def load_db(path, energy_col):
     df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
     if not df.empty:
         df['formula'] = df['smiles'].apply(

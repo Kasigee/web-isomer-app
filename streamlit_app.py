@@ -21,7 +21,7 @@ st.markdown(f"""<style>
 
 # ---------- Geometry Helpers ----------
 @st.cache_data
- def load_molecule_from_xyz(xyz_text):
+def load_molecule_from_xyz(xyz_text):
     mol = Chem.MolFromXYZBlock(xyz_text)
     if mol is None:
         st.error("Could not parse XYZ file.")

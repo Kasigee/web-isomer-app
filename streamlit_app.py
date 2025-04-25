@@ -8,7 +8,7 @@ from rdkit.Chem import rdDetermineBonds, AllChem, rdMolDescriptors
 from rdkit.Chem.rdmolfiles import MolToXYZBlock
 
 # ---------- Page Configuration ----------
-st.set_page_config(page_title="Isomerization Energy", layout="centered")
+st.set_page_config(page_title="PAHAPS", layout="centered")
 UNE_GREEN, UNE_GOLD = "#00693e", "#ffd400"
 st.markdown(f"""<style>
 .stApp {{ background-color:{UNE_GREEN}10; }}
@@ -152,7 +152,7 @@ def smiles_to_xyz(smiles):
 
 # ---------- Main ----------
 def main():
-    st.title("Isomerization Energy Predictor")
+    st.title("PAH Automated Property Scanner")
     # Initialize session
     for key in ('xyz', 'prev', 'last_comp'):
         st.session_state.setdefault(key, None)

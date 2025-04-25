@@ -192,7 +192,7 @@ def main():
     )
     components.html(html1, height=320)
 
-    # Lowest-energy isomer via SMILES
+        # Lowest-energy isomer via SMILES (PBE0-D4 database)
     try:
         df_db = pd.read_csv("COMPAS_XTB_MS_WEBAPP_DATA.csv")
         orig = df_db.loc[df_db.smiles == smi, 'file'].iloc[0]
@@ -201,18 +201,68 @@ def main():
         if not cand.empty:
             best = cand.loc[cand.D4_rel_energy.idxmin()]
             low_smi = best.smiles
-            st.subheader(f"Compared to lowest energy isomer below (SMILES {low_smi}):")
+            st.subheader(f"Compared to lowest PBE0-D4 isomer (SMILES {low_smi}):")
             xyz_low = smiles_to_xyz(low_smi)
             html2 = (
                 "<div id='v2' style='width:400px;height:300px'></div>"
                 "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
-                "<script>var v2=$3Dmol.createViewer('v2',{backgroundColor:'0xeeeeee'});"
+                "<script>"
+                "var v2=$3Dmol.createViewer('v2',{backgroundColor:'0xeeeeee'});"
                 f"v2.addModel(`{xyz_low}`,'xyz');"
-                "v2.setStyle({stick:{}});v2.rotate(1,90);v2.zoomTo();v2.render();</script>"
+                "v2.setStyle({stick:{}});v2.rotate(1,90);v2.zoomTo();v2.render();"
+                "</script>"
             )
             components.html(html2, height=320)
     except Exception as e:
-        st.warning(f"Could not load comparison structure: {e}")
+        st.warning(f"Could not load PBE0-D4 comparison: {e}")
+
+    # Lowest-energy isomer via SMILES (compas-3D database)
+    try:
+        df_3d = pd.read_csv("compas-3D.csv")
+        orig3 = df_3d.loc[df_3d.smiles == smi, 'file'].iloc[0]
+        prefix3 = '_'.join(orig3.split('_')[:2])
+        cand3 = df_3d[df_3d.file.str.startswith(prefix3)]
+        if not cand3.empty:
+            best3 = cand3.loc[cand3.Erel_eV.idxmin()]
+            low3_smi = best3.smiles
+            st.subheader(f"Compared to lowest compas-3D isomer (SMILES {low3_smi}):")
+            xyz3 = smiles_to_xyz(low3_smi)
+            html3 = (
+                "<div id='v3' style='width:400px;height:300px'></div>"
+                "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+                "<script>"
+                "var v3=$3Dmol.createViewer('v3',{backgroundColor:'0xeeeeee'});"
+                f"v3.addModel(`{xyz3}`,'xyz');"
+                "v3.setStyle({stick:{}});v3.rotate(1,90);v3.zoomTo();v3.render();"
+                "</script>"
+            )
+            components.html(html3, height=320)
+    except Exception as e:
+        st.warning(f"Could not load compas-3D comparison: {e}")
+
+    # Lowest-energy isomer via SMILES (compas-3x database)
+    try:
+        df_x = pd.read_csv("compas-3x.csv")
+        origx = df_x.loc[df_x.smiles == smi, 'file'].iloc[0]
+        prefixx = '_'.join(origx.split('_')[:2])
+        candx = df_x[df_x.file.str.startswith(prefixx)]
+        if not candx.empty:
+            bestx = candx.loc[candx.Erel_eV.idxmin()]
+            lowx_smi = bestx.smiles
+            st.subheader(f"Compared to lowest compas-3x isomer (SMILES {lowx_smi}):")
+            xyzx = smiles_to_xyz(lowx_smi)
+            htmlx = (
+                "<div id='v4' style='width:400px;height:300px'></div>"
+                "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+                "<script>"
+                "var v4=$3Dmol.createViewer('v4',{backgroundColor:'0xeeeeee'});"
+                f"v4.addModel(`{xyzx}`,'xyz');"
+                "v4.setStyle({stick:{}});v4.rotate(1,90);v4.zoomTo();v4.render();"
+                "</script>"
+            )
+            components.html(htmlx, height=320)
+    except Exception as e:
+        st.warning(f"Could not load compas-3x comparison: {e}")
 
 if __name__ == '__main__':
     main()

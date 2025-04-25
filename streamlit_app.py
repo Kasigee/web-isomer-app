@@ -105,14 +105,11 @@ def load_db(path, energy_col):
 
 DB_SPECS = [
     ('COMPAS_XTB_MS_WEBAPP_DATA.csv', 'D4_rel_energy', 'PBE0-D4/6-31G(2df,p)'),
-    ('compas-3D.csv', 'Erel_eV', 'CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP'),
-    ('compas-3x.csv', 'xtb_iso_energy', 'GFN2-xTB')
+    ('compas-3D.csv',                'Erel_eV',       'CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP'),
+    ('compas-3x.csv',               'xtb_iso_energy','GFN2-xTB')
 ]
 
-# Only load DBs once
-DB_DFS = [(load_db(fn, col), col, label) for fn, col, label in DB_SPECS]
-
-# ---------- Models ----------
+# ---------- Models ---------- ----------
 MODEL_FUNCS = {
     'Dihedral-only':       (lambda sd,h,r,x: 0.01506654*sd + 5.26542057, 'E = 0.01506654·ΣDihedral + 5.26542057'),
     'HOMA-only':           (lambda sd,h,r,x: -83.95374901*h + 81.47198711, 'E = -83.9537·HOMA + 81.4720'),

@@ -139,7 +139,7 @@ def main():
     for key in ('xyz', 'prev', 'last_comp'):
         if key not in st.session_state:
             st.session_state[key] = None
-    uploaded = st.file_uploader("Upload XYZ file", type="xyz")("Upload XYZ file", type="xyz")
+    uploaded = st.file_uploader("Upload XYZ file", type="xyz")
     if uploaded:
         txt = uploaded.read().decode()
         if txt != st.session_state.prev:

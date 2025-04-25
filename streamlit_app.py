@@ -4,6 +4,7 @@ import streamlit.components.v1 as components
 import numpy as np
 import pandas as pd
 from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import rdDetermineBonds, AllChem
 from rdkit.Chem.rdmolfiles import MolToXYZBlock
 
@@ -89,13 +90,13 @@ def load_db(path, energy_col):
     df = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
     if not df.empty:
         # add formula column
-        df['formula'] = df['smiles'].apply(lambda s: Chem.CalcMolFormula(Chem.MolFromSmiles(s)))
+        df['formula'] = df['smiles'].apply(lambda s: rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(s)))(Chem.MolFromSmiles(s)))
     return df
 
 DB_SPECS = [
     ('COMPAS_XTB_MS_WEBAPP_DATA.csv', 'D4_rel_energy', 'PBE0-D4/6-31G(2df,p)'),
     ('compas-3D.csv',          'Erel_eV',         'CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP'),
-    ('compas-3x.csv',         'Erel_eV',  'GFN2-xTB')
+    ('compas-3x.csv',         'xtb_iso_energy',  'GFN2-xTB')
 ]
 
 # load all DBs

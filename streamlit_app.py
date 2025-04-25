@@ -164,8 +164,18 @@ def main():
     for label,val in get_db_energies(smi):
         if val is None: st.info(f"No match in {label}")
         else: st.markdown(f"**{label}: {val:.3f} kJ/mol**")
-    # 3Dmol viewer
-    html=f"<div id='view' style='width:400px;height:300px'></div><script src='https://3Dmol.org/build/3Dmol.js'></script><script>v=$3Dmol.createViewer('view',{{backgroundColor:'0xeeeeee'}});v.addModel(`{st.session_state.xyz}`,'xyz');v.setStyle({{stick:{}}});v.rotate(1,90);v.zoomTo();v.render();</script>"
-    components.html(html,height=320)
+        # 3Dmol viewer
+    xyz_txt = st.session_state.xyz
+    html = (
+        "<div id='view' style='width:400px;height:300px'></div>"
+        "<script src='https://3Dmol.org/build/3Dmol.js'></script>"
+        "<script>"
+        "var v = $3Dmol.createViewer('view',{backgroundColor:'0xeeeeee'});"
+        "v.addModel(`" + xyz_txt + "`,'xyz');"
+        "v.setStyle({stick:{}});"
+        "v.rotate(1,90);v.zoomTo();v.render();"
+        "</script>"
+    )
+    components.html(html, height=320)
 
 if __name__=='__main__': main()

@@ -115,6 +115,7 @@ def get_db_energies(smi):
                     out.append((label, val))
                     continue
         out.append((label, None))
+        out.append(("cite CAM-B3LYP-D3BJ and GFN2-xTB from DOI: 10.1039/D4CP01027B", None))
     return out
 
 

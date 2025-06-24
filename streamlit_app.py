@@ -98,12 +98,12 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
 
 def get_db_energies(smi):
     specs = [
-        ("COMPAS_XTB_MS_WEBAPP_DATA.csv", "D4_rel_energy", "PBE0-D4/6-31G(2df,p)//GFN2-xTB"),
-        ("compas-3D.csv", "Erel_eV", "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP"),
-        ("compas-3x.csv", "Erel_eV", "GFN2-xTB")
+        ("COMPAS_XTB_MS_WEBAPP_DATA.csv", "D4_rel_energy", "PBE0-D4/6-31G(2df,p)//GFN2-xTB","cite: TBC and COMPAS3 DOI: 10.1039/D4CP01027B"),
+        ("compas-3D.csv", "Erel_eV", "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP", "cite COMPAS3 DOI: 10.1039/D4CP01027B"),
+        ("compas-3x.csv", "Erel_eV", "GFN2-xTB", "cite COMPAS3 DOI: 10.1039/D4CP01027B")
     ]
     out = []
-    for fn, col, label in specs:
+    for fn, col, label, cite in specs:
         if os.path.exists(fn):
             df = pd.read_csv(fn)
             if col in df.columns and 'smiles' in df.columns:
@@ -112,10 +112,9 @@ def get_db_energies(smi):
                     val = float(m.iloc[0][col])
                     if col == "Erel_eV":
                         val *= 96.485
-                    out.append((label, val))
+                    out.append((label, val,cite))
                     continue
         out.append((label, None))
-        out.append(("cite CAM-B3LYP-D3BJ and GFN2-xTB from DOI: 10.1039/D4CP01027B", None))
     return out
 
 

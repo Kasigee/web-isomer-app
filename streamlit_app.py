@@ -112,9 +112,9 @@ def get_db_energies(smi):
                     val = float(m.iloc[0][col])
                     if col == "Erel_eV":
                         val *= 96.485
-                    out.append((label, val,cite))
+                    out.append((label, val, cite))
                     continue
-        out.append((label, None))
+        out.append((label, None, None))
     return out
 
 

@@ -98,9 +98,9 @@ def homa_aromatic_rings(mol, alpha=257.7, R_opt=1.388):
 
 def get_db_energies(smi):
     specs = [
-        ("COMPAS_XTB_MS_WEBAPP_DATA.csv", "D4_rel_energy", "PBE0-D4/6-31G(2df,p)//GFN2-xTB","cite: TBC and COMPAS3 - DOI: 10.1039/D4CP01027B"),
-        ("compas-3D.csv", "Erel_eV", "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP", "cite: COMPAS3 - DOI: 10.1039/D4CP01027B"),
-        ("compas-3x.csv", "Erel_eV", "GFN2-xTB", "cite: COMPAS3 - DOI: 10.1039/D4CP01027B")
+        ("COMPAS_XTB_MS_WEBAPP_DATA.csv", "D4_rel_energy", "PBE0-D4/6-31G(2df,p)//GFN2-xTB","[cite: TBC and COMPAS3 - DOI: 10.1039/D4CP01027B]"),
+        ("compas-3D.csv", "Erel_eV", "CAM-B3LYP-D3BJ/cc-pvdz//CAM-B3LYP-D3BJ/def2-SVP", "[cite: COMPAS3 - DOI: 10.1039/D4CP01027B]"),
+        ("compas-3x.csv", "Erel_eV", "GFN2-xTB", "[cite: COMPAS3 - DOI: 10.1039/D4CP01027B]")
     ]
     out = []
     for fn, col, label, cite in specs:

@@ -119,8 +119,8 @@ def get_db_energies(smi):
 
 
 def model_dhr(sum_dev, homa, rmsd):
-    return (0.02082790 * sum_dev - 340.9727 * homa + 16.6464 * rmsd + 236.1412,
-            "E=0.0208·ΣDihedral-340.97·HOMA+16.65·θRMSD+236.14")
+    return (0.02073804 * sum_dev - 338.99792591 * homa + 16.44369447 * rmsd + 236.08764463,
+            "E=0.0207·ΣDihedral-339.00·HOMA+16.44·θRMSD+236.09")
 
 def model_dihedral(sum_dev):
     return (0.01506654 * sum_dev + 5.2654,
